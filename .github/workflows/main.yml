@@ -1,0 +1,30 @@
+name: Build and Release Windows EXE
+
+on:
+  push:
+    tags:
+      - 'v*' # Запускать сборку при отправке любого тега, начинающегося на v
+
+permissions:
+  contents: write # Разрешение для бота создавать релизы и загружать файлы
+
+jobs:
+  build:
+    runs-on: windows-latest # Используем виртуальную машину с Windows
+
+    steps:
+      - name: Скачивание кода
+        uses: actions/checkout@v4
+
+      - name: Установка .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Сборка проекта в один EXE
+        run: dotnet publish ./ZapretControl.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./publish
+
+      - name: Создание релиза и прикрепление EXE
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./publish/*.exe
