@@ -1,7 +1,7 @@
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 public interface IWheelTarget
 {
@@ -81,6 +81,12 @@ public class ThinScrollBar : Control
     }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
     {
         var g = e.Graphics;
         Color back = Ui.ParentBack(this);
@@ -291,6 +297,12 @@ public class ScrollText : Control, IWheelTarget
 
     protected override void OnPaint(PaintEventArgs e)
     {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
+    {
         var g = e.Graphics;
         var p = Theme.Current;
         g.Clear(Ui.ParentBack(this));
@@ -322,6 +334,12 @@ public class SimpleList : Control, IWheelTarget
         Font = Fonts.Body;
         Controls.Add(bar);
         bar.Scroll += (s, e) => { offset = bar.Value; Invalidate(); };
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) tip.Dispose();
+        base.Dispose(disposing);
     }
 
     public int Count => items.Count;
@@ -379,6 +397,12 @@ public class SimpleList : Control, IWheelTarget
     }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
     {
         var g = e.Graphics;
         var p = Theme.Current;

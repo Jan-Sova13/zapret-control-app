@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 /// <summary>Стратегия = bat-файл из папки zapret. Аргументы winws.exe берём прямо из него.</summary>
 public class Strategy

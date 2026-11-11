@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 public class TestResult
 {

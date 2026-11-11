@@ -1,4 +1,4 @@
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 static class Program
 {
@@ -19,7 +19,7 @@ static class Program
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 
         MainForm form = null;
-        Application.ThreadException += (s, e) => Crash(form, e.Exception);
+        Application.ThreadException += (s, e) => Diag.Write("ui-thread", e.Exception);
         AppDomain.CurrentDomain.UnhandledException += (s, e) => Crash(form, e.ExceptionObject as Exception);
 
         bool autostart = args.Contains("--autostart");
@@ -27,17 +27,12 @@ static class Program
         Application.Run(form);
     }
 
-    // При падении: гасим обход и драйвер, пишем лог и выходим.
-    // Если не успеем (например, процесс убит) — winws всё равно умрёт вместе с нами (Job Object).
+    /// <summary>Фатальная ошибка вне интерфейса: гасим обход и драйвер, пишем лог и выходим.
+    /// Если не успеем (процесс убит), winws всё равно умрёт вместе с нами (Job Object).</summary>
     static void Crash(MainForm form, Exception ex)
     {
         try { form?.EmergencyShutdown(); } catch { }
-        try
-        {
-            Directory.CreateDirectory(AppSettings.Dir);
-            File.WriteAllText(Path.Combine(AppSettings.Dir, "crash.log"), DateTime.Now + Environment.NewLine + (ex?.ToString() ?? "unknown"));
-        }
-        catch { }
+        Diag.Write("fatal", ex);
         Environment.Exit(1);
     }
 }

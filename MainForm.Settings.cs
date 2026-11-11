@@ -1,4 +1,4 @@
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 public partial class MainForm
 {
@@ -41,7 +41,7 @@ public partial class MainForm
 
         lblVersion = Caption("", Fonts.Body, Muted, 28);
         c.Controls.Add(lblVersion);
-        var upd = Caption("Скачать или обновить сам zapret можно кнопкой «Обновить zapret» в левом нижнем углу окна.", Fonts.Small, Muted, 26);
+        var upd = Caption("Скачать или обновить сам zapret можно кнопкой «Обновить Zapret» в левом нижнем углу окна.", Fonts.Small, Muted, 26);
         upd.Margin = Ui.Pad(0, 0, 0, 14);
         c.Controls.Add(upd);
 
@@ -131,19 +131,19 @@ public partial class MainForm
         if (string.IsNullOrWhiteSpace(path))
         {
             ShowPage(3);
-            MessageBox.Show("Укажите папку, куда положить zapret (можно пустую), на вкладке «Настройки» — и нажмите «Обновить zapret» ещё раз.", AppSettings.AppName);
+            MessageBox.Show("Укажите папку, куда положить zapret (можно пустую), на вкладке «Настройки» — и нажмите «Обновить Zapret» ещё раз.", AppSettings.AppName);
             return;
         }
 
         var ask = MessageBox.Show(
             "Будут скачаны последние файлы zapret с GitHub и заменены папки bin, lists, utils и все .bat в:\n" + path +
             "\n\nВаши списки *-user.txt сохранятся, старые списки уйдут в бэкап. Версия не сверяется — обновление будет всегда. Продолжить?",
-            "Обновить zapret", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            "Обновить Zapret", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (ask != DialogResult.Yes) return;
 
         if (AnyListDirty)
         {
-            var r = MessageBox.Show("В списках есть несохранённые правки, при обновлении они будут потеряны. Продолжить?", "Обновить zapret",
+            var r = MessageBox.Show("В списках есть несохранённые правки, при обновлении они будут потеряны. Продолжить?", "Обновить Zapret",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (r != DialogResult.Yes) return;
         }
@@ -155,12 +155,12 @@ public partial class MainForm
         {
             string tag = await Updater.UpdateAsync(path, AddLog, CancellationToken.None);
             AddLog("zapret обновлён до " + tag + ".");
-            MessageBox.Show("Готово: " + tag, "Обновить zapret", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("Готово: " + tag, "Обновить Zapret", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
             AddLog("Обновление не удалось: " + ex.Message);
-            MessageBox.Show("Обновление не удалось:\n" + ex.Message, "Обновить zapret", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Обновление не удалось:\n" + ex.Message, "Обновить Zapret", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
         finally
         {

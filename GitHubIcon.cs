@@ -1,6 +1,6 @@
 using System.Drawing.Drawing2D;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 /// <summary>Логотип GitHub (Octicons mark-github, MIT) в виде многоугольника: рисуется любым цветом и размером.</summary>
 static class GitHubIcon

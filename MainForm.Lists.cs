@@ -3,7 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 public partial class MainForm
 {
@@ -83,7 +83,7 @@ public partial class MainForm
                 ? "IP-адреса и подсети, которые НЕ нужно обрабатывать обходом."
                 : "IP-адреса и подсети, к которым применяется обход.");
             sb.AppendLine("• По одной записи в строке: 1.2.3.4, подсеть 10.0.0.0/8, IPv6 — 2001:db8::/32.");
-            sb.Append("• Без портов, схем и комментариев в конце строки. Строки, начинающиеся с #, — комментарии.");
+            sb.Append("• Без портов, схем и комментариев в конце строки. Строки с # в начале — комментарии.");
         }
         else
         {
@@ -93,7 +93,7 @@ public partial class MainForm
             sb.AppendLine("• По одному домену в строке, только имя: example.com — без http://, без путей (/…), без пробелов и порта.");
             sb.AppendLine("• Поддомены учитываются автоматически: example.com покрывает и www.example.com, и cdn.example.com.");
             sb.AppendLine("• Маски со звёздочкой не поддерживаются. Регистр не важен. Кириллические домены — в punycode (xn--…).");
-            sb.Append("• Строки, начинающиеся с #, — комментарии. Файл не должен быть пустым (при пустом файле программа добавит заглушку).");
+            sb.Append("• Строки с # в начале — комментарии. Файл не должен быть пустым (при пустом файле программа добавит заглушку).");
         }
         if (user) sb.Append("\n★ Это ваш список: он не затирается при обновлении zapret.");
         return sb.ToString();
@@ -114,7 +114,7 @@ public partial class MainForm
         string dir = Path.Combine(cfg.ZapretPath ?? "", "lists");
         if (!Strategy.IsValidZapretDir(cfg.ZapretPath) || !Directory.Exists(dir))
         {
-            var l = Caption("Папка zapret не выбрана. Укажите её на вкладке «Настройки» или скачайте zapret кнопкой «Обновить zapret» внизу.", Fonts.Body, Muted, 30);
+            var l = Caption("Папка zapret не выбрана. Укажите её на вкладке «Настройки» или скачайте zapret кнопкой «Обновить Zapret» внизу.", Fonts.Body, Muted, 30);
             host.Controls.Add(l);
             SetListButtons(false);
             host.ResumeLayout(true);

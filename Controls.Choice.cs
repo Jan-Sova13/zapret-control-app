@@ -1,6 +1,6 @@
 using System.Drawing.Drawing2D;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 /// <summary>Выпадающий список: поле с рамкой в цвете темы и всплывающий список с той же полосой прокрутки, что и везде.</summary>
 public class Dropdown : Control
@@ -90,6 +90,12 @@ public class Dropdown : Control
     }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
     {
         var g = e.Graphics;
         var p = Theme.Current;
@@ -181,6 +187,12 @@ public class TabStrip : Control
     }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
     {
         var g = e.Graphics;
         var p = Theme.Current;

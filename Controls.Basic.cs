@@ -1,6 +1,6 @@
 using System.Drawing.Drawing2D;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 public class RoundButton : Button
 {
@@ -23,6 +23,12 @@ public class RoundButton : Button
     protected override void OnEnabledChanged(EventArgs e) { base.OnEnabledChanged(e); Invalidate(); }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
     {
         var g = e.Graphics;
         Color back = Ui.ParentBack(this);
@@ -104,6 +110,12 @@ public class Check : Control
 
     protected override void OnPaint(PaintEventArgs e)
     {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
+    {
         var g = e.Graphics;
         var p = Theme.Current;
         Color back = Ui.ParentBack(this);
@@ -149,6 +161,12 @@ public class Note : Control
 
     protected override void OnPaint(PaintEventArgs e)
     {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
+    {
         var g = e.Graphics;
         g.Clear(Ui.ParentBack(this));
         g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -175,6 +193,12 @@ public class ThinProgress : Control
 
     protected override void OnPaint(PaintEventArgs e)
     {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
+    {
         var g = e.Graphics;
         g.Clear(Ui.ParentBack(this));
         g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -199,6 +223,12 @@ public class LinePanel : Panel
     }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
     {
         base.OnPaint(e);
         using var pen = new Pen(Theme.Current.Line);

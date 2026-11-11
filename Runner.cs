@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 /// <summary>Запускает winws.exe как дочерний процесс, привязанный к Job Object:
 /// умрёт наша программа (в том числе аварийно) — умрёт и winws.</summary>

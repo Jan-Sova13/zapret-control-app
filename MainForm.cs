@@ -1,12 +1,10 @@
 using System.Diagnostics;
 using Microsoft.Win32;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 public partial class MainForm : Form
 {
-    const string GitHubUrl = "https://github.com/Jan-Sova13/zapret-control-app";
-
     const string GameFilterHelp =
         "Игровой фильтр\n" +
         "\n" +
@@ -37,9 +35,10 @@ public partial class MainForm : Form
     bool warnBusy;
     string lastRouteLog;
 
-    TableLayoutPanel root, pnlWarn;
+    TableLayoutPanel root, pnlWarn, footerGrid;
+    string newVersionUrl;
     RoundButton btnPower, btnGameHelp, btnTray, btnUpdate, btnGitHub, btnWarnRefresh, btnWarnClose;
-    Label lblStatus, lblSub, lblWarn, lblFooter;
+    Label lblStatus, lblSub, lblWarn, lblFooter, lblNewVersion;
     Dropdown cbStrategy, cbGame, cbTheme;
     TabStrip tabs;
     Panel[] pages;
@@ -84,6 +83,21 @@ public partial class MainForm : Form
 
         if (startHidden) allowShow = false;
         if (cfg.StartBypassOnLaunch && StrategyReady()) StartBypass(true);
+
+        _ = Task.Run(async () =>
+        {
+            string url = await AppUpdate.CheckAsync();
+            if (url != null) SafeInvoke(() => ShowNewVersion(url));
+        });
+
+        if (cfg.AutoStartApp)
+        {
+            _ = Task.Run(() =>
+            {
+                string err = SystemTools.EnsureAutostart();
+                if (err != null) AddLog("Автозапуск: не удалось обновить задачу планировщика: " + err);
+            });
+        }
     }
 
     bool StrategyReady() => Strategy.IsValidZapretDir(cfg.ZapretPath) && SelectedStrategy() != null;
@@ -182,7 +196,7 @@ public partial class MainForm : Form
         if (!Strategy.IsValidZapretDir(cfg.ZapretPath))
         {
             ShowPage(3);
-            if (!silent) MessageBox.Show("Сначала укажите папку zapret (или скачайте его кнопкой «Обновить zapret» внизу).", AppSettings.AppName,
+            if (!silent) MessageBox.Show("Сначала укажите папку zapret (или скачайте его кнопкой «Обновить Zapret» внизу).", AppSettings.AppName,
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return false;
         }
@@ -367,14 +381,14 @@ public partial class MainForm : Form
 
         var info = Grid(2, 3);
         info.BackColor = Surface;
-        Cols(info, Fill(), Abs(172));
+        Cols(info, Fill(), Abs(152));
         Rows(info, Abs(36), Abs(26), Fill());
 
-        lblStatus = Caption("Обход выключен", Fonts.Display, Muted, 36);
+        lblStatus = Caption("Zapret выключен", Fonts.Display, Muted, 36);
         lblStatus.Dock = DockStyle.Fill;
         info.Controls.Add(lblStatus, 0, 0);
 
-        btnTray = Btn("Свернуть в трей", Line, 160, 34);
+        btnTray = Btn("Свернуть в трей", Line, 140, 34);
         btnTray.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         btnTray.Click += (s, e) => HideToTray();
         info.Controls.Add(btnTray, 1, 0);
@@ -486,12 +500,12 @@ public partial class MainForm : Form
 
     Control BuildFooter()
     {
-        var t = Grid(3, 1);
-        t.BackColor = Surface;
-        t.Padding = Ui.Pad(Ui.Margin, 7, Ui.Margin, 7);
-        Cols(t, Abs(192), Fill(), Abs(136));
+        footerGrid = Grid(4, 1);
+        footerGrid.BackColor = Surface;
+        footerGrid.Padding = Ui.Pad(Ui.Margin, 7, Ui.Margin, 7);
+        Cols(footerGrid, Abs(192), Fill(), Abs(0), Abs(176));
 
-        btnUpdate = Btn("Обновить zapret", Accent, 180, 34);
+        btnUpdate = Btn("Обновить Zapret", Accent, 180, 34);
         btnUpdate.Dock = DockStyle.Fill;
         btnUpdate.Margin = Ui.Pad(0, 0, 12, 0);
         btnUpdate.Click += async (s, e) => await UpdateZapretAsync();
@@ -500,18 +514,37 @@ public partial class MainForm : Form
         lblFooter.Dock = DockStyle.Fill;
         lblFooter.AutoEllipsis = true;
 
-        btnGitHub = Btn("GitHub", Line, 124, 34);
-        btnGitHub.Dock = DockStyle.Fill;
-        btnGitHub.Click += (s, e) =>
-        {
-            try { Process.Start(new ProcessStartInfo(GitHubUrl) { UseShellExecute = true }); }
-            catch (Exception ex) { AddLog("Не удалось открыть ссылку: " + ex.Message); }
-        };
+        lblNewVersion = Caption("Вышла новая версия! Скачать — жми", Fonts.Body, DangerText, 34);
+        lblNewVersion.Dock = DockStyle.Fill;
+        lblNewVersion.TextAlign = ContentAlignment.MiddleRight;
+        lblNewVersion.Margin = Ui.Pad(0, 0, 14, 0);
+        lblNewVersion.Cursor = Cursors.Hand;
+        lblNewVersion.Visible = false;
+        lblNewVersion.Click += (s, e) => OpenUrl(newVersionUrl ?? AppUpdate.RepoUrl);
 
-        t.Controls.Add(btnUpdate, 0, 0);
-        t.Controls.Add(lblFooter, 1, 0);
-        t.Controls.Add(btnGitHub, 2, 0);
-        return t;
+        btnGitHub = Btn("GitHub  " + AppUpdate.Format(AppUpdate.Current), Line, 170, 34);
+        btnGitHub.Dock = DockStyle.Fill;
+        btnGitHub.Click += (s, e) => OpenUrl(AppUpdate.RepoUrl);
+
+        footerGrid.Controls.Add(btnUpdate, 0, 0);
+        footerGrid.Controls.Add(lblFooter, 1, 0);
+        footerGrid.Controls.Add(lblNewVersion, 2, 0);
+        footerGrid.Controls.Add(btnGitHub, 3, 0);
+        return footerGrid;
+    }
+
+    void OpenUrl(string url)
+    {
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception ex) { AddLog("Не удалось открыть ссылку: " + ex.Message); }
+    }
+
+    void ShowNewVersion(string url)
+    {
+        if (shuttingDown || IsDisposed) return;
+        newVersionUrl = url;
+        footerGrid.ColumnStyles[2].Width = Ui.S(300);
+        lblNewVersion.Visible = true;
     }
 
     void ShowPage(int i)
@@ -553,7 +586,7 @@ public partial class MainForm : Form
         btnPower.Text = on ? "Выключить" : "Включить";
         btnPower.BackColor = on ? Danger : Accent;
         btnPower.ForeColor = Color.White;
-        lblStatus.Text = on ? "Обход работает" : "Обход выключен";
+        lblStatus.Text = on ? "Zapret включён" : "Zapret выключен";
         lblStatus.ForeColor = on ? AccentLight : Muted;
         lblSub.Text = on
             ? "Стратегия: " + runner.CurrentStrategy + "   ·   PID " + runner.Pid

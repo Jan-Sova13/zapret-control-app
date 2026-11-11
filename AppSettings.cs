@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 public class AppSettings
 {

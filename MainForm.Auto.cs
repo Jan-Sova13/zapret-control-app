@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 public partial class MainForm
 {

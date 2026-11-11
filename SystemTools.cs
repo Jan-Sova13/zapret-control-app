@@ -5,7 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 /// <summary>Все обращения к системе (процессы, службы, сеть, планировщик) собраны в одном месте.</summary>
 public static class SystemTools
@@ -40,8 +40,8 @@ public static class SystemTools
 
     public static (int Code, string Output) PowerShell(string script, int timeoutMs = 30000)
     {
-        string enc = Convert.ToBase64String(Encoding.Unicode.GetBytes("$ErrorActionPreference='Stop'; " + script));
-        return Run("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + enc, timeoutMs);
+        string enc = Convert.ToBase64String(Encoding.Unicode.GetBytes("$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; " + script));
+        return Run("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -OutputFormat Text -EncodedCommand " + enc, timeoutMs);
     }
 
     /// <summary>TCP timestamps нужны части стратегий zapret. null — состояние определить не удалось.</summary>
@@ -178,35 +178,41 @@ public static class SystemTools
         return result;
     }
 
-    public static bool AutostartExists()
-    {
-        var r = PowerShell("if (Get-ScheduledTask -TaskName '" + TaskName + "' -ErrorAction SilentlyContinue) { 'yes' }");
-        return r.Output.Contains("yes");
-    }
+    static string RemoveTaskScript(string name)
+        => "if (Get-ScheduledTask -TaskName '" + name + "' -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName '" + name + "' -Confirm:$false }; ";
 
-    /// <summary>Возвращает текст ошибки или null, если всё получилось.</summary>
+    /// <summary>Возвращает текст ошибки или null. Явный exit 0 в конце обязателен: иначе код возврата берётся из $? последней команды,
+    /// а Get-ScheduledTask для несуществующей задачи оставляет $? = false даже при SilentlyContinue.</summary>
     public static string SetAutostart(bool on)
     {
-        string script;
+        string script = RemoveTaskScript(LegacyTaskName);
         if (on)
         {
             string exe = (Environment.ProcessPath ?? "").Replace("'", "''");
-            script =
-                "Unregister-ScheduledTask -TaskName '" + LegacyTaskName + "' -Confirm:$false -ErrorAction SilentlyContinue; " +
+            script +=
                 "$u = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name; " +
                 "$a = New-ScheduledTaskAction -Execute '" + exe + "' -Argument '--autostart'; " +
                 "$t = New-ScheduledTaskTrigger -AtLogOn -User $u; " +
                 "$p = New-ScheduledTaskPrincipal -UserId $u -LogonType Interactive -RunLevel Highest; " +
                 "$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero); " +
-                "Register-ScheduledTask -TaskName '" + TaskName + "' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null";
+                "Register-ScheduledTask -TaskName '" + TaskName + "' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null; ";
         }
         else
         {
-            script =
-                "Unregister-ScheduledTask -TaskName '" + TaskName + "' -Confirm:$false -ErrorAction SilentlyContinue; " +
-                "Unregister-ScheduledTask -TaskName '" + LegacyTaskName + "' -Confirm:$false -ErrorAction SilentlyContinue";
+            script += RemoveTaskScript(TaskName);
         }
-        var r = PowerShell(script, 40000);
+        var r = PowerShell(script + "exit 0", 40000);
         return r.Code == 0 ? null : r.Output.Trim();
+    }
+
+    /// <summary>Задача автозапуска могла остаться от прежней версии (другой путь к exe, старое имя) — пересоздаёт её, если она не указывает на текущий exe.</summary>
+    public static string EnsureAutostart()
+    {
+        string exe = (Environment.ProcessPath ?? "").Replace("'", "''");
+        var r = PowerShell(
+            "$t = Get-ScheduledTask -TaskName '" + TaskName + "' -ErrorAction SilentlyContinue; " +
+            "$l = Get-ScheduledTask -TaskName '" + LegacyTaskName + "' -ErrorAction SilentlyContinue; " +
+            "if ($t -and -not $l -and $t.Actions[0].Execute -eq '" + exe + "') { 'current' }; exit 0");
+        return r.Code == 0 && r.Output.Contains("current") ? null : SetAutostart(true);
     }
 }

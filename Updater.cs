@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 public static class Updater
 {
@@ -22,7 +22,7 @@ public static class Updater
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("ZapretControl/1.0");
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("ZapretControlApp/" + AppUpdate.Format(AppUpdate.Current));
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
 
             log("Запрашиваю последний релиз на GitHub…");

@@ -1,4 +1,4 @@
-namespace ZapretControl;
+namespace ZapretControlApp;
 
 public partial class MainForm
 {
