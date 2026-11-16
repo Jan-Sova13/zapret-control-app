@@ -91,13 +91,6 @@
 
 Полный перечень того, что программа делает в системе, есть в окне «О программе» (правая часть кнопки GitHub внизу).
 
-## Формат релиза (для самообновления программы)
-
-- Тег вида `vX.Y.Z` (например `v2.0.1`), версия в `ZapretControlApp.csproj` должна совпадать.
-- В релизе: `Zapret-Control-App-vX.Y.Z.zip` с файлом `Zapret Control App.exe` внутри (либо сам `.exe`) и `SHA256SUMS.txt` со строкой `<sha256>  <имя файла>`. Оба файла создаёт автосборка (`.github/workflows/main.yml`).
-- Контрольная сумма берётся из поля `digest` файла релиза, а если его нет — из `SHA256SUMS.txt`. Без суммы программа предупреждает в окне обновления.
-- Загрузка только по HTTPS с github.com.
-
 ## Лицензия
 
 [GNU GPL v3](LICENSE). Сам zapret — отдельный проект: [Flowseal/zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube).
