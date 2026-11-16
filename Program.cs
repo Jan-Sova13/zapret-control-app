@@ -7,6 +7,13 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // Режим завершения обновления: старый экземпляр ещё может держать мьютекс, поэтому проверка выше него
+        if (args.Length >= 3 && args[0] == "--finish-update")
+        {
+            Environment.ExitCode = AppUpdate.FinishUpdate(args);
+            return;
+        }
+
         _mutex = new Mutex(true, "Global\\ZapretControlApp.SingleInstance", out bool created);
         if (!created)
         {
@@ -23,7 +30,7 @@ static class Program
         AppDomain.CurrentDomain.UnhandledException += (s, e) => Crash(form, e.ExceptionObject as Exception);
 
         bool autostart = args.Contains("--autostart");
-        form = new MainForm(autostart);
+        form = new MainForm(autostart, args.Contains("--resume-bypass"), args.Contains("--updated"));
         Application.Run(form);
     }
 

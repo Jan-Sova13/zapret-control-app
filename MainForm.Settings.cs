@@ -4,8 +4,10 @@ public partial class MainForm
 {
     ScrollText txtPath;
     RoundButton btnBrowse;
-    Check chkAutoStart, chkTray, chkStartBypass, chkTimestamps;
+    Check chkAutoStart, chkTray, chkStartBypass, chkTimestamps, chkAutoUpdate;
+    Dropdown cbNotify;
     Label lblVersion;
+    readonly List<Control> advSettings = new List<Control>();
 
     Panel BuildPageSettings()
     {
@@ -41,7 +43,7 @@ public partial class MainForm
 
         lblVersion = Caption("", Fonts.Body, Muted, 28);
         c.Controls.Add(lblVersion);
-        var upd = Caption("Скачать или обновить сам zapret можно кнопкой «Обновить Zapret» в левом нижнем углу окна.", Fonts.Small, Muted, 26);
+        var upd = Caption("Скачать или обновить сам zapret можно кнопкой «Обновить Zapret» вверху окна.", Fonts.Small, Muted, 26);
         upd.Margin = Ui.Pad(0, 0, 0, 14);
         c.Controls.Add(upd);
 
@@ -63,23 +65,31 @@ public partial class MainForm
         chkTimestamps.Checked = cfg.ManageTimestamps;
         chkTimestamps.CheckedChanged += (s, e) => { if (!loading) { cfg.ManageTimestamps = chkTimestamps.Checked; cfg.Save(); } };
 
-        foreach (var chk in new[] { chkAutoStart, chkTray, chkStartBypass, chkTimestamps })
+        chkAutoUpdate = Chk("Автоматически проверять обновления программы (при запуске и раз в сутки)");
+        chkAutoUpdate.Checked = cfg.AutoCheckUpdates;
+        chkAutoUpdate.CheckedChanged += (s, e) => { if (!loading) { cfg.AutoCheckUpdates = chkAutoUpdate.Checked; cfg.Save(); } };
+
+        foreach (var chk in new[] { chkAutoStart, chkTray, chkStartBypass, chkTimestamps, chkAutoUpdate })
         {
             chk.Margin = new Padding(chk.Margin.Left, 0, 0, Ui.S(8));
             c.Controls.Add(chk);
         }
+        advSettings.Add(chkTimestamps);
+        advSettings.Add(chkAutoUpdate);
 
-        var info = new Note
+        cbNotify = Drop(220);
+        cbNotify.Items.Add(new Opt { Text = "Выкл", Value = "off" });
+        cbNotify.Items.Add(new Opt { Text = "Только важные", Value = "important" });
+        cbNotify.Items.Add(new Opt { Text = "Все", Value = "all" });
+        cbNotify.SelectedIndex = Math.Max(0, cbNotify.Items.Cast<Opt>().ToList().FindIndex(o => o.Value == cfg.Notifications));
+        cbNotify.SelectedIndexChanged += (s, e) =>
         {
-            BackColor = Surface, ForeColor = Muted, Height = Ui.S(230), Margin = Ui.Pad(0, 12, 0, 0),
-            Text = "Что программа делает в системе:\n" +
-                   "• Хранит свои настройки (в том числе выбранную тему) в %AppData%\\Zapret Control App\\settings.json.\n" +
-                   "• Пока обход включён: работает winws.exe и загружен драйвер WinDivert. При выключении, закрытии или падении программы winws завершается, драйвер выгружается.\n" +
-                   "• TCP timestamps: если выключены, включаются на время работы и возвращаются обратно (если программа упадёт, вернутся при следующем запуске).\n" +
-                   "• Автозапуск (только если галочка стоит): задача планировщика «Zapret Control App» — нужна, чтобы стартовать сразу с правами администратора. Снимете галочку — задача удалится.\n" +
-                   "• Hosts, службы Windows и реестр не меняются.",
+            if (loading || !(cbNotify.SelectedItem is Opt o)) return;
+            cfg.Notifications = o.Value;
+            cfg.Save();
         };
-        c.Controls.Add(info);
+        tip.SetToolTip(cbNotify, "Всплывающие уведомления Windows. «Только важные» — Zapret упал, проблемы с сервисами.\nНе показываются, пока окно программы активно.");
+        c.Controls.Add(OptionRow("Уведомления:", cbNotify));
 
         c.ResumeLayout(true);
         p.Controls.Add(host);
@@ -130,7 +140,7 @@ public partial class MainForm
         string path = cfg.ZapretPath;
         if (string.IsNullOrWhiteSpace(path))
         {
-            ShowPage(3);
+            ShowPage(PgSettings);
             MessageBox.Show("Укажите папку, куда положить zapret (можно пустую), на вкладке «Настройки» — и нажмите «Обновить Zapret» ещё раз.", AppSettings.AppName);
             return;
         }
@@ -149,12 +159,14 @@ public partial class MainForm
         }
 
         if (runner.IsRunning) StopBypass();
+        updating = true;
         btnUpdate.Enabled = false;
         Cursor = Cursors.AppStarting;
         try
         {
             string tag = await Updater.UpdateAsync(path, AddLog, CancellationToken.None);
             AddLog("zapret обновлён до " + tag + ".");
+            Notify("zapret-updated", false, "Zapret обновлён", "Установлена версия " + tag + ".", ToolTipIcon.Info, () => ShowTab(PgLog));
             MessageBox.Show("Готово: " + tag, "Обновить Zapret", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
@@ -164,8 +176,9 @@ public partial class MainForm
         }
         finally
         {
+            updating = false;
             Cursor = Cursors.Default;
-            btnUpdate.Enabled = true;
+            btnUpdate.Enabled = !autoRunning;
             ReloadAll();
             ReloadListFiles(true);
             UpdateUi();

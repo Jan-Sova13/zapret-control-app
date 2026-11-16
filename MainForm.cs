@@ -24,28 +24,34 @@ public partial class MainForm : Form
         "\n" +
         "Если игры работают нормально — оставьте «выкл».";
 
+    const int PgLog = 0, PgLists = 1, PgAuto = 2, PgSettings = 3, PgDiag = 4, PgWatch = 5;
+    static readonly string[] PageNames = { "Журнал", "Списки", "Проверка стратегий (автоподбор)", "Настройки", "Диагностика", "Периодическая проверка" };
+    static readonly int[] SimplePages = { PgLog, PgAuto, PgSettings };
+    static readonly int[] AdvancedPages = { PgLog, PgLists, PgAuto, PgDiag, PgWatch, PgSettings };
+
     readonly AppSettings cfg;
     readonly Runner runner = new Runner();
     List<Strategy> strategies = new List<Strategy>();
     readonly bool startHidden;
     bool allowShow = true;
     bool shuttingDown;
+    bool forceClose;
     bool loading = true;
     bool warnDismissed;
     bool warnBusy;
     string lastRouteLog;
+    int[] tabMap = SimplePages;
 
     TableLayoutPanel root, pnlWarn, footerGrid;
-    string newVersionUrl;
-    RoundButton btnPower, btnGameHelp, btnTray, btnUpdate, btnGitHub, btnWarnRefresh, btnWarnClose;
-    Label lblStatus, lblSub, lblWarn, lblFooter, lblNewVersion;
+    RoundButton btnPower, btnGameHelp, btnTrayHide, btnUpdate, btnWarnRefresh, btnWarnClose;
+    SplitButton btnGitHub;
+    SwitchToggle swAdvanced;
+    Label lblStatus, lblSub, lblWarn, lblNewVersion;
     Dropdown cbStrategy, cbGame, cbTheme;
     TabStrip tabs;
     Panel[] pages;
     ScrollText txtLog;
     ToolTip tip;
-    NotifyIcon tray;
-    ToolStripMenuItem miToggle;
     System.Windows.Forms.Timer watchTimer;
 
     class Opt
@@ -54,7 +60,7 @@ public partial class MainForm : Form
         public override string ToString() => Text;
     }
 
-    public MainForm(bool autostart)
+    public MainForm(bool autostart, bool resumeBypass = false, bool updated = false)
     {
         cfg = AppSettings.Load();
         Theme.Current = Theme.ByName(cfg.Theme);
@@ -66,12 +72,14 @@ public partial class MainForm : Form
         RefreshThemeBits();
         Application.AddMessageFilter(new WheelFilter());
 
-        runner.Log += AddLog;
+        runner.Log += s => { RememberOutput(s); AddLog(s); };
         runner.Stopped += () => SafeInvoke(OnRunnerStopped);
         SystemEvents.SessionEnding += (s, e) => Shutdown();
 
         StartupCleanup();
         ReloadAll();
+        InitWatch();
+        ApplyAdvanced(cfg.AdvancedMode, false);
         UpdateUi();
         RefreshWarnings(true);
 
@@ -82,13 +90,10 @@ public partial class MainForm : Form
         loading = false;
 
         if (startHidden) allowShow = false;
-        if (cfg.StartBypassOnLaunch && StrategyReady()) StartBypass(true);
+        if (updated) AddLog("Программа обновлена до " + AppUpdate.Format(AppUpdate.Current) + ".");
+        if ((cfg.StartBypassOnLaunch || resumeBypass) && StrategyReady()) StartBypass(true);
 
-        _ = Task.Run(async () =>
-        {
-            string url = await AppUpdate.CheckAsync();
-            if (url != null) SafeInvoke(() => ShowNewVersion(url));
-        });
+        InitUpdates();
 
         if (cfg.AutoStartApp)
         {
@@ -112,7 +117,7 @@ public partial class MainForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (AnyListDirty && !shuttingDown)
+        if (AnyListDirty && !shuttingDown && !forceClose)
         {
             var r = MessageBox.Show("Есть несохранённые изменения в списках. Закрыть без сохранения?", AppSettings.AppName,
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question);
@@ -139,7 +144,10 @@ public partial class MainForm : Form
     {
         if (shuttingDown) return;
         shuttingDown = true;
+        StopWatchTimers();
+        try { updateTimer?.Stop(); } catch { }
         try { autoCts?.Cancel(); } catch { }
+        try { diagCts?.Cancel(); } catch { }
         try { runner.Stop(true); } catch { }
         try { cfg.DriverMayLinger = false; RestoreTimestamps(); cfg.Save(); } catch { }
         try { if (tray != null) { tray.Visible = false; tray.Dispose(); } } catch { }
@@ -188,6 +196,7 @@ public partial class MainForm : Form
 
     void TogglePower()
     {
+        if (restarting || autoRunning) return;
         if (runner.IsRunning) StopBypass(); else StartBypass(false);
     }
 
@@ -195,8 +204,8 @@ public partial class MainForm : Form
     {
         if (!Strategy.IsValidZapretDir(cfg.ZapretPath))
         {
-            ShowPage(3);
-            if (!silent) MessageBox.Show("Сначала укажите папку zapret (или скачайте его кнопкой «Обновить Zapret» внизу).", AppSettings.AppName,
+            ShowPage(PgSettings);
+            if (!silent) MessageBox.Show("Сначала укажите папку zapret (или скачайте его кнопкой «Обновить Zapret» вверху).", AppSettings.AppName,
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return false;
         }
@@ -217,6 +226,7 @@ public partial class MainForm : Form
             cfg.Save();
             if (!runner.Start(cfg.ZapretPath, st, GameMode(), out string err))
             {
+                lastStartError = err;
                 AddLog("Не удалось запустить: " + err);
                 if (!silent) MessageBox.Show(err, "Не удалось включить обход", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 Runner.CleanupDriver();
@@ -224,9 +234,11 @@ public partial class MainForm : Form
                 UpdateUi();
                 return false;
             }
+            lastStartError = null;
             cfg.Strategy = st.Name;
             cfg.Save();
             AddLog("Обход включён: " + st.Name + " (PID " + runner.Pid + ")");
+            OnBypassStarted();
         }
         finally { Cursor = Cursors.Default; }
         UpdateUi();
@@ -243,6 +255,7 @@ public partial class MainForm : Form
             RestoreTimestamps();
             cfg.Save();
             AddLog("Обход выключен.");
+            OnBypassStopped();
         }
         finally { Cursor = Cursors.Default; }
         UpdateUi();
@@ -251,15 +264,6 @@ public partial class MainForm : Form
     void RestartIfRunning()
     {
         if (runner.IsRunning) { StopBypass(); StartBypass(true); }
-    }
-
-    void OnRunnerStopped()
-    {
-        if (shuttingDown) return;
-        AddLog("winws.exe завершился сам (не по команде). Смотрите журнал выше.");
-        Runner.CleanupDriver();
-        RestoreTimestamps();
-        UpdateUi();
     }
 
     /// <summary>Другой winws или служба zapret конфликтуют с нашим запуском: предлагаем остановить.</summary>
@@ -336,8 +340,8 @@ public partial class MainForm : Form
         SuspendLayout();
         AutoScaleMode = AutoScaleMode.None;
         Text = AppSettings.AppName;
-        ClientSize = Ui.Sz(960, 700);
-        MinimumSize = Ui.Sz(940, 680);
+        ClientSize = Ui.Sz(1200, 700);
+        MinimumSize = Ui.Sz(1180, 680);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Bg;
         ForeColor = TextC;
@@ -354,14 +358,14 @@ public partial class MainForm : Form
         root.Controls.Add(BuildTabBar(), 0, 2);
 
         var content = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty, BackColor = Bg };
-        pages = new[] { BuildPageLog(), BuildPageLists(), BuildPageAuto(), BuildPageSettings() };
+        pages = new[] { BuildPageLog(), BuildPageLists(), BuildPageAuto(), BuildPageSettings(), BuildPageDiag(), BuildPageWatch() };
         foreach (var p in pages) { p.Dock = DockStyle.Fill; content.Controls.Add(p); }
         root.Controls.Add(content, 0, 3);
 
         root.Controls.Add(BuildFooter(), 0, 4);
 
         Controls.Add(root);
-        ShowPage(0);
+        ShowPage(PgLog);
         ResumeLayout(true);
     }
 
@@ -379,24 +383,29 @@ public partial class MainForm : Form
         btnPower.Click += (s, e) => TogglePower();
         h.Controls.Add(btnPower, 0, 0);
 
-        var info = Grid(2, 3);
+        var info = Grid(3, 3);
         info.BackColor = Surface;
-        Cols(info, Fill(), Abs(152));
+        Cols(info, Fill(), Abs(190), Abs(152));
         Rows(info, Abs(36), Abs(26), Fill());
 
         lblStatus = Caption("Zapret выключен", Fonts.Display, Muted, 36);
         lblStatus.Dock = DockStyle.Fill;
         info.Controls.Add(lblStatus, 0, 0);
 
-        btnTray = Btn("Свернуть в трей", Line, 140, 34);
-        btnTray.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        btnTray.Click += (s, e) => HideToTray();
-        info.Controls.Add(btnTray, 1, 0);
+        btnUpdate = Btn("Обновить Zapret", Accent, 180, 34);
+        btnUpdate.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+        btnUpdate.Click += async (s, e) => await UpdateZapretAsync();
+        info.Controls.Add(btnUpdate, 1, 0);
+
+        btnTrayHide = Btn("Свернуть в трей", Line, 140, 34);
+        btnTrayHide.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        btnTrayHide.Click += (s, e) => HideToTray();
+        info.Controls.Add(btnTrayHide, 2, 0);
 
         lblSub = Caption("", Fonts.Small, Muted, 26);
         lblSub.Dock = DockStyle.Fill;
         info.Controls.Add(lblSub, 0, 1);
-        info.SetColumnSpan(lblSub, 2);
+        info.SetColumnSpan(lblSub, 3);
 
         var row = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Surface, Margin = Padding.Empty, Padding = Ui.Pad(0, 4, 0, 0), WrapContents = false };
         var l1 = Lbl("Стратегия", Muted);
@@ -433,7 +442,7 @@ public partial class MainForm : Form
 
         row.Controls.AddRange(new Control[] { l1, cbStrategy, cbGame, btnGameHelp });
         info.Controls.Add(row, 0, 2);
-        info.SetColumnSpan(row, 2);
+        info.SetColumnSpan(row, 3);
         h.Controls.Add(info, 1, 0);
         return h;
     }
@@ -473,8 +482,7 @@ public partial class MainForm : Form
         Cols(t, Fill(), Abs(250));
 
         tabs = new TabStrip { Dock = DockStyle.Fill, Margin = Padding.Empty, BackColor = Bg };
-        tabs.Tabs.AddRange(new[] { "Журнал", "Списки", "Проверка стратегий (автоподбор)", "Настройки" });
-        tabs.SelectedChanged += (s, e) => ShowPage(tabs.Selected);
+        tabs.SelectedChanged += (s, e) => ShowPage(tabMap[Math.Min(tabs.Selected, tabMap.Length - 1)]);
         t.Controls.Add(tabs, 0, 0);
 
         var right = new LinePanel { Dock = DockStyle.Fill, Margin = Padding.Empty, BackColor = Bg };
@@ -503,16 +511,14 @@ public partial class MainForm : Form
         footerGrid = Grid(4, 1);
         footerGrid.BackColor = Surface;
         footerGrid.Padding = Ui.Pad(Ui.Margin, 7, Ui.Margin, 7);
-        Cols(footerGrid, Abs(192), Fill(), Abs(0), Abs(176));
+        Cols(footerGrid, Abs(260), Fill(), Abs(0), Abs(100));
 
-        btnUpdate = Btn("Обновить Zapret", Accent, 180, 34);
-        btnUpdate.Dock = DockStyle.Fill;
-        btnUpdate.Margin = Ui.Pad(0, 0, 12, 0);
-        btnUpdate.Click += async (s, e) => await UpdateZapretAsync();
-
-        lblFooter = Caption("", Fonts.Small, Muted, 34);
-        lblFooter.Dock = DockStyle.Fill;
-        lblFooter.AutoEllipsis = true;
+        swAdvanced = new SwitchToggle { Text = "Продвинутый режим", Anchor = AnchorStyles.Left, Checked = cfg.AdvancedMode };
+        tip.SetToolTip(swAdvanced, "Показывает все вкладки и настройки. Изменённые в нём настройки продолжают действовать и после возврата в простой режим.");
+        swAdvanced.CheckedChanged += (s, e) =>
+        {
+            if (!loading) ApplyAdvanced(swAdvanced.Checked, true);
+        };
 
         lblNewVersion = Caption("Вышла новая версия! Скачать — жми", Fonts.Body, DangerText, 34);
         lblNewVersion.Dock = DockStyle.Fill;
@@ -520,14 +526,15 @@ public partial class MainForm : Form
         lblNewVersion.Margin = Ui.Pad(0, 0, 14, 0);
         lblNewVersion.Cursor = Cursors.Hand;
         lblNewVersion.Visible = false;
-        lblNewVersion.Click += (s, e) => OpenUrl(newVersionUrl ?? AppUpdate.RepoUrl);
+        lblNewVersion.Click += (s, e) => { if (availableUpdate != null) ShowUpdateWindow(availableUpdate); };
 
-        btnGitHub = Btn("GitHub  " + AppUpdate.Format(AppUpdate.Current), Line, 170, 34);
-        btnGitHub.Dock = DockStyle.Fill;
-        btnGitHub.Click += (s, e) => OpenUrl(AppUpdate.RepoUrl);
+        btnGitHub = new SplitButton { Dock = DockStyle.Fill, MidText = AppUpdate.Format(AppUpdate.Current), Margin = Padding.Empty };
+        btnGitHub.LeftClick += (s, e) => OpenUrl(AppUpdate.RepoUrl);
+        btnGitHub.MidClick += (s, e) => ShowVersionMenu();
+        btnGitHub.RightClick += (s, e) => ShowAbout();
+        footerGrid.ColumnStyles[3] = new ColumnStyle(SizeType.Absolute, btnGitHub.NaturalWidth() + Ui.S(40));
 
-        footerGrid.Controls.Add(btnUpdate, 0, 0);
-        footerGrid.Controls.Add(lblFooter, 1, 0);
+        footerGrid.Controls.Add(swAdvanced, 0, 0);
         footerGrid.Controls.Add(lblNewVersion, 2, 0);
         footerGrid.Controls.Add(btnGitHub, 3, 0);
         return footerGrid;
@@ -539,19 +546,45 @@ public partial class MainForm : Form
         catch (Exception ex) { AddLog("Не удалось открыть ссылку: " + ex.Message); }
     }
 
-    void ShowNewVersion(string url)
+    int CurrentPage() => tabs.Selected >= 0 && tabs.Selected < tabMap.Length && tabs.Selected < tabs.Tabs.Count ? tabMap[tabs.Selected] : PgLog;
+
+    void RebuildTabs()
     {
-        if (shuttingDown || IsDisposed) return;
-        newVersionUrl = url;
-        footerGrid.ColumnStyles[2].Width = Ui.S(300);
-        lblNewVersion.Visible = true;
+        int cur = CurrentPage();
+        tabMap = cfg.AdvancedMode ? AdvancedPages : SimplePages;
+        tabs.Tabs.Clear();
+        foreach (var pg in tabMap) tabs.Tabs.Add(PageNames[pg]);
+        int idx = Array.IndexOf(tabMap, cur);
+        if (idx < 0) idx = 0;
+        tabs.Selected = idx;
+        tabs.Invalidate();
+        ShowPage(tabMap[idx]);
     }
 
-    void ShowPage(int i)
+    /// <summary>Простой режим: журнал, автоподбор, настройки. Продвинутый: все вкладки и все настройки.</summary>
+    void ApplyAdvanced(bool on, bool save)
     {
-        if (tabs.Selected != i) { tabs.Selected = i; return; }
-        for (int k = 0; k < pages.Length; k++) pages[k].Visible = k == i;
-        if (i == 1 && !listsLoaded) ReloadListFiles(false);
+        cfg.AdvancedMode = on;
+        if (save) cfg.Save();
+        if (swAdvanced != null && swAdvanced.Checked != on)
+        {
+            bool was = loading;
+            loading = true;
+            swAdvanced.Checked = on;
+            loading = was;
+        }
+        foreach (var c in advSettings) c.Visible = on;
+        SetAutoAdvanced(on);
+        RebuildTabs();
+    }
+
+    void ShowPage(int page)
+    {
+        int ti = Array.IndexOf(tabMap, page);
+        if (ti < 0) { page = PgLog; ti = Array.IndexOf(tabMap, PgLog); }
+        if (tabs.Selected != ti && ti < tabs.Tabs.Count) tabs.Selected = ti;
+        for (int k = 0; k < pages.Length; k++) pages[k].Visible = k == page;
+        if (page == PgLists && !listsLoaded) ReloadListFiles(false);
     }
 
     Panel BuildPageLog()
@@ -582,39 +615,19 @@ public partial class MainForm : Form
     void UpdateUi()
     {
         if (IsDisposed) return;
+        SyncState();
         bool on = runner.IsRunning;
         btnPower.Text = on ? "Выключить" : "Включить";
         btnPower.BackColor = on ? Danger : Accent;
         btnPower.ForeColor = Color.White;
-        lblStatus.Text = on ? "Zapret включён" : "Zapret выключен";
-        lblStatus.ForeColor = on ? AccentLight : Muted;
-        lblSub.Text = on
-            ? "Стратегия: " + runner.CurrentStrategy + "   ·   PID " + runner.Pid
-            : (Strategy.IsValidZapretDir(cfg.ZapretPath) ? "Выберите стратегию и нажмите «Включить»" : "Сначала укажите папку zapret на вкладке «Настройки»");
-        if (miToggle != null) miToggle.Text = on ? "Выключить обход" : "Включить обход";
-        if (tray != null) tray.Text = on ? AppSettings.AppName + " — работает" : AppSettings.AppName + " — выключен";
-        lblFooter.Text = string.IsNullOrEmpty(cfg.ZapretPath) ? "Папка zapret не выбрана" : "Папка zapret: " + cfg.ZapretPath;
-    }
-
-    void BuildTray()
-    {
-        var menu = new ContextMenuStrip { Renderer = new ThemeRenderer(), Font = Fonts.Body };
-        var miShow = new ToolStripMenuItem("Показать окно");
-        miShow.Click += (s, e) => ShowMain();
-        miToggle = new ToolStripMenuItem("Включить обход");
-        miToggle.Click += (s, e) => TogglePower();
-        var miExit = new ToolStripMenuItem("Выход (всё выключится)");
-        miExit.Click += (s, e) => Close();
-        menu.Items.AddRange(new ToolStripItem[] { miShow, miToggle, new ToolStripSeparator(), miExit });
-
-        tray = new NotifyIcon
-        {
-            Icon = Icon ?? SystemIcons.Application,
-            Text = AppSettings.AppName,
-            ContextMenuStrip = menu,
-            Visible = true,
-        };
-        tray.DoubleClick += (s, e) => ShowMain();
+        lblStatus.Text = StateTitle();
+        lblStatus.ForeColor = state == BypassState.Working ? AccentLight
+            : state == BypassState.Crashed ? DangerText
+            : on ? WarnText : Muted;
+        lblSub.Text = StatusLine();
+        if (miToggle != null) miToggle.Text = on ? "Выключить Zapret" : "Включить Zapret";
+        RefreshTray();
+        RefreshWatchInfo();
     }
 
     void ReloadAll()
@@ -640,6 +653,6 @@ public partial class MainForm : Form
         }
         finally { loading = was; }
         listsLoaded = false;
-        if (pages != null && tabs != null && tabs.Selected == 1) ReloadListFiles(true);
+        if (pages != null && tabs != null && CurrentPage() == PgLists) ReloadListFiles(true);
     }
 }

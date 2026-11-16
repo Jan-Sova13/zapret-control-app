@@ -5,6 +5,7 @@ namespace ZapretControlApp;
 public class AppSettings
 {
     public const string AppName = "Zapret Control App";
+    const int CurrentSettingsVersion = 2;
 
     public string ZapretPath { get; set; } = "";
     public string Strategy { get; set; } = "";
@@ -19,6 +20,30 @@ public class AppSettings
     public bool StopOnFirstSuccess { get; set; } = true;
     public List<string> TestServices { get; set; } = new List<string>(TestTargets.ServiceNames);
     public List<string> CustomDomains { get; set; } = new List<string>();
+
+    // v2: интерфейс
+    public int SettingsVersion { get; set; }
+    public bool AdvancedMode { get; set; }
+    public string Notifications { get; set; } = "important";   // off | important | all
+
+    // v2: сторожевой режим
+    public bool WatchEnabled { get; set; } = true;
+    public int WatchIntervalMin { get; set; } = 5;              // 0 — выкл, 2 | 5 | 10
+    public bool RestartOnWake { get; set; } = true;
+    public bool RestartOnCrash { get; set; } = true;
+    public string OnProblems { get; set; } = "once";            // report | once | ten
+
+    // v2: автоподбор
+    public string AutoMode { get; set; } = "quick";             // quick | deep
+    public int DeepCandidates { get; set; } = 5;
+    public int SpeedThresholdKB { get; set; } = 300;
+    public string LastAutoAt { get; set; } = "";
+    public string LastAutoResult { get; set; } = "";
+
+    // v2: обновление программы
+    public bool AutoCheckUpdates { get; set; } = true;
+    public string SkippedVersion { get; set; } = "";
+    public string NotifiedVersion { get; set; } = "";
 
     static string AppData => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
     public static string Dir => Path.Combine(AppData, AppName);
@@ -41,15 +66,36 @@ public class AppSettings
                 var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath));
                 if (s != null)
                 {
-                    if (s.TestServices == null) s.TestServices = new List<string>(TestTargets.ServiceNames);
-                    if (s.CustomDomains == null) s.CustomDomains = new List<string>();
-                    if (s.Theme != "light" && s.Theme != "green") s.Theme = "dark";
+                    s.Normalize();
+                    if (s.SettingsVersion < CurrentSettingsVersion)
+                    {
+                        s.SettingsVersion = CurrentSettingsVersion;
+                        s.Save();
+                    }
                     return s;
                 }
             }
         }
         catch { }
-        return new AppSettings();
+        return new AppSettings { SettingsVersion = CurrentSettingsVersion };
+    }
+
+    /// <summary>Отсутствующие и некорректные значения приводятся к допустимым: старый settings.json читается без ошибок.</summary>
+    void Normalize()
+    {
+        if (TestServices == null) TestServices = new List<string>(TestTargets.ServiceNames);
+        if (CustomDomains == null) CustomDomains = new List<string>();
+        if (Theme != "light" && Theme != "green") Theme = "dark";
+        if (Notifications != "off" && Notifications != "all") Notifications = "important";
+        if (WatchIntervalMin != 0 && WatchIntervalMin != 2 && WatchIntervalMin != 10) WatchIntervalMin = 5;
+        if (OnProblems != "report" && OnProblems != "ten") OnProblems = "once";
+        if (AutoMode != "deep") AutoMode = "quick";
+        if (DeepCandidates < 1 || DeepCandidates > 20) DeepCandidates = 5;
+        if (SpeedThresholdKB < 50 || SpeedThresholdKB > 100000) SpeedThresholdKB = 300;
+        LastAutoAt ??= "";
+        LastAutoResult ??= "";
+        SkippedVersion ??= "";
+        NotifiedVersion ??= "";
     }
 
     public void Save()

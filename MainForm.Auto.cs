@@ -5,13 +5,18 @@ namespace ZapretControlApp;
 
 public partial class MainForm
 {
+    const int DeepRepeats = 3;
+
     Check[] chkServices;
     Check chkStopFirst;
     ScrollText txtCustom;
-    SimpleList lbResults;
+    TipList lbResults;
     ThinProgress prog;
     Label lblAuto;
-    RoundButton btnAuto, btnAutoCancel, btnApplyBest, btnAddToList;
+    RoundButton btnAuto, btnDeep, btnAutoCancel, btnApplyBest, btnAddToList;
+    Dropdown cbCand, cbSpeed;
+    TableLayoutPanel autoLeft;
+    Control autoAdvRow;
     CancellationTokenSource autoCts;
     List<TestResult> results = new List<TestResult>();
     List<TestResult> resultView = new List<TestResult>();
@@ -21,23 +26,26 @@ public partial class MainForm
         var p = Page();
         var t = Grid(1, 3);
         Cols(t, Fill());
-        Rows(t, Abs(72), Fill(), Abs(76));
+        Rows(t, Abs(90), Fill(), Abs(100));
 
         var hint = Caption(
             "Для каждой стратегии программа запускает winws, открывает по HTTPS сайты выбранных сервисов и ваши домены и считает, сколько открылось. " +
             "Стратегии проверяются по очереди: одновременно их запускать нельзя, они бы перехватывали трафик друг друга. " +
+            "«Глубокий» режим дополнительно качает данные с сервисов и повторяет проверку 3 раза: так видно замедление и нестабильность. " +
+            "Видеопоток YouTube (googlevideo) напрямую проверить нельзя — адреса подписаны, поэтому берутся скрипт плеера и картинки. " +
             "VPN на время проверки лучше выключить. Telegram zapret чаще всего не лечит.",
-            Fonts.Small, Muted, 72);
+            Fonts.Small, Muted, 90);
         hint.Dock = DockStyle.Fill;
         hint.TextAlign = ContentAlignment.TopLeft;
         t.Controls.Add(hint, 0, 0);
 
         var body = Grid(2, 1);
-        Cols(body, (SizeType.Percent, 42), (SizeType.Percent, 58));
+        Cols(body, (SizeType.Percent, 48), (SizeType.Percent, 52));
 
-        var left = Grid(1, 6);
+        var left = Grid(1, 7);
+        autoLeft = left;
         left.Margin = Ui.Pad(0, 0, 16, 0);
-        Rows(left, Abs(26), Abs(66), Abs(34), Abs(26), Fill(), Abs(46));
+        Rows(left, Abs(26), Abs(66), Abs(34), Abs(0), Abs(26), Fill(), Abs(46));
         left.Controls.Add(Lbl("Что проверять:", Muted), 0, 0);
 
         var sf = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Margin = Padding.Empty };
@@ -52,16 +60,35 @@ public partial class MainForm
         }
         left.Controls.Add(sf, 0, 1);
 
-        chkStopFirst = Chk("Остановиться, как только всё откроется");
+        chkStopFirst = Chk("Остановиться, как только всё откроется (только для быстрой проверки)");
         chkStopFirst.Checked = cfg.StopOnFirstSuccess;
-        tip.SetToolTip(chkStopFirst, "Проверка закончится на первой стратегии, при которой открылись все выбранные сервисы и домены.\nБыстрее, но полного рейтинга остальных стратегий не будет.");
+        tip.SetToolTip(chkStopFirst, "Только для быстрой проверки. Она закончится на первой стратегии, при которой открылись все выбранные сервисы и домены.\nБыстрее, но полного рейтинга остальных стратегий не будет.");
         left.Controls.Add(chkStopFirst, 0, 2);
 
-        left.Controls.Add(Lbl("Свои домены для проверки (по одному в строке):", Muted), 0, 3);
+        var adv = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Margin = Padding.Empty, WrapContents = false, Padding = Ui.Pad(0, 4, 0, 0) };
+        var l1 = Lbl("Глубокий: кандидатов", Muted);
+        l1.Margin = Ui.Pad(0, 6, 8, 0);
+        cbCand = Drop(70);
+        cbCand.Margin = Ui.Pad(0, 0, 14, 0);
+        foreach (var n in new[] { 3, 5, 8, 10 }) cbCand.Items.Add(new Opt { Text = n.ToString(), Value = n.ToString() });
+        cbCand.SelectedIndex = Math.Max(0, cbCand.Items.Cast<Opt>().ToList().FindIndex(o => o.Value == cfg.DeepCandidates.ToString()));
+        cbCand.SelectedIndexChanged += (s, e) => { if (!loading && cbCand.SelectedItem is Opt o) { cfg.DeepCandidates = int.Parse(o.Value); cfg.Save(); } };
+        var l2 = Lbl("порог скорости", Muted);
+        l2.Margin = Ui.Pad(0, 6, 8, 0);
+        cbSpeed = Drop(130);
+        foreach (var n in new[] { 100, 300, 500, 1000 }) cbSpeed.Items.Add(new Opt { Text = n + " КБ/с", Value = n.ToString() });
+        cbSpeed.SelectedIndex = Math.Max(0, cbSpeed.Items.Cast<Opt>().ToList().FindIndex(o => o.Value == cfg.SpeedThresholdKB.ToString()));
+        cbSpeed.SelectedIndexChanged += (s, e) => { if (!loading && cbSpeed.SelectedItem is Opt o) { cfg.SpeedThresholdKB = int.Parse(o.Value); cfg.Save(); } };
+        tip.SetToolTip(cbSpeed, "Ниже этой скорости загрузки сервис в глубоком режиме считается «медленным».");
+        adv.Controls.AddRange(new Control[] { l1, cbCand, l2, cbSpeed });
+        autoAdvRow = adv;
+        left.Controls.Add(adv, 0, 3);
+
+        left.Controls.Add(Lbl("Свои домены для проверки (по одному в строке):", Muted), 0, 4);
         txtCustom = Input(true);
         txtCustom.Dock = DockStyle.Fill;
         txtCustom.Text = string.Join(Environment.NewLine, cfg.CustomDomains);
-        left.Controls.Add(txtCustom, 0, 4);
+        left.Controls.Add(txtCustom, 0, 5);
 
         var lf = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Padding = Ui.Pad(0, 12, 0, 0), Margin = Padding.Empty };
         btnAddToList = Btn("Добавить мои домены в список обхода", Line, 340, 34);
@@ -73,31 +100,38 @@ public partial class MainForm
             "списках, добавлять их не нужно.");
         btnAddToList.Click += (s, e) => AddDomainsToUserList(ParseDomains(txtCustom.Text), false);
         lf.Controls.Add(btnAddToList);
-        left.Controls.Add(lf, 0, 5);
+        left.Controls.Add(lf, 0, 6);
         body.Controls.Add(left, 0, 0);
 
         var right = Grid(1, 2);
         Rows(right, Abs(26), Fill());
         right.Controls.Add(Lbl("Результаты (двойной клик — выбрать стратегию):", Muted), 0, 0);
-        lbResults = new SimpleList { Dock = DockStyle.Fill, Font = Fonts.Mono, BackColor = Field, ForeColor = TextC, ShowTips = true, RowHeight = Ui.S(26), Margin = Padding.Empty };
+        lbResults = new TipList { Dock = DockStyle.Fill, Font = Fonts.Mono, BackColor = Field, ForeColor = TextC, RowHeight = Ui.S(26), Margin = Padding.Empty };
+        lbResults.TipFor = i => i >= 0 && i < resultView.Count ? (resultView[i] is DeepResult d ? d.Tip : RowText(resultView[i])) : "";
         lbResults.ItemActivated += (s, e) => ApplySelectedResult();
         right.Controls.Add(lbResults, 0, 1);
         body.Controls.Add(right, 1, 0);
         t.Controls.Add(body, 0, 1);
 
-        var bottom = Grid(1, 2);
-        Rows(bottom, Abs(50), Abs(26));
-        var bf = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Padding = Ui.Pad(0, 12, 0, 0), WrapContents = false, Margin = Padding.Empty };
-        btnAuto = Btn("Запустить автоподбор", Accent, 220, 34);
+        var bottom = Grid(1, 3);
+        Rows(bottom, Abs(24), Abs(48), Abs(26));
+        bottom.Controls.Add(Lbl("Запустить автоподбор:", Muted), 0, 0);
+
+        var bf = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Padding = Ui.Pad(0, 4, 0, 0), WrapContents = false, Margin = Padding.Empty };
+        btnAuto = Btn("Быстрый", Accent, 130, 34);
+        btnDeep = Btn("Глубокий", Accent, 130, 34);
         btnAutoCancel = Btn("Остановить", Danger, 130, 34);
         btnApplyBest = Btn("Выбрать выделенную стратегию", Line, 290, 34);
-        btnAuto.Margin = btnAutoCancel.Margin = Ui.Pad(0, 0, 10, 0);
+        btnAuto.Margin = btnDeep.Margin = btnAutoCancel.Margin = Ui.Pad(0, 0, 10, 0);
         btnAutoCancel.Enabled = false;
-        btnAuto.Click += async (s, e) => await RunAutoAsync();
+        tip.SetToolTip(btnAuto, "Проверяет, что сайты открываются и отдают данные. Быстро.");
+        tip.SetToolTip(btnDeep, "Сначала быстрая проверка всех стратегий, затем лучшие проверяются загрузкой данных, 3 повтора.\nДольше и расходует трафик (до ~15 МБ на стратегию).");
+        btnAuto.Click += async (s, e) => await RunAutoAsync(false);
+        btnDeep.Click += async (s, e) => await RunAutoAsync(true);
         btnAutoCancel.Click += (s, e) => autoCts?.Cancel();
         btnApplyBest.Click += (s, e) => ApplySelectedResult();
-        bf.Controls.AddRange(new Control[] { btnAuto, btnAutoCancel, btnApplyBest });
-        bottom.Controls.Add(bf, 0, 0);
+        bf.Controls.AddRange(new Control[] { btnAuto, btnDeep, btnAutoCancel, btnApplyBest });
+        bottom.Controls.Add(bf, 0, 1);
 
         var pf = Grid(2, 1);
         Cols(pf, Abs(420), Fill());
@@ -106,11 +140,18 @@ public partial class MainForm
         lblAuto.Dock = DockStyle.Fill;
         pf.Controls.Add(prog, 0, 0);
         pf.Controls.Add(lblAuto, 1, 0);
-        bottom.Controls.Add(pf, 0, 1);
+        bottom.Controls.Add(pf, 0, 2);
         t.Controls.Add(bottom, 0, 2);
 
         p.Controls.Add(t);
         return p;
+    }
+
+    void SetAutoAdvanced(bool on)
+    {
+        if (autoLeft == null) return;
+        autoLeft.RowStyles[3].Height = on ? Ui.S(40) : 0;
+        autoAdvRow.Visible = on;
     }
 
     List<string> ParseDomains(string text)
@@ -156,7 +197,7 @@ public partial class MainForm
     /// <summary>Дописывает домены в list-general-user.txt. true — если всё в порядке, в том числе когда добавлять нечего.</summary>
     bool AddDomainsToUserList(List<string> domains, bool silent)
     {
-        if (!Strategy.IsValidZapretDir(cfg.ZapretPath)) { ShowPage(3); return false; }
+        if (!Strategy.IsValidZapretDir(cfg.ZapretPath)) { ShowPage(PgSettings); return false; }
         if (domains.Count == 0)
         {
             if (!silent) MessageBox.Show("Сначала впишите свои домены в поле «Свои домены для проверки».", AppSettings.AppName);
@@ -196,17 +237,20 @@ public partial class MainForm
 
     void SetAutoBusy(bool busy)
     {
-        btnAuto.Enabled = !busy;
+        autoRunning = busy;
+        btnAuto.Enabled = btnDeep.Enabled = !busy;
         btnAutoCancel.Enabled = busy;
         btnApplyBest.Enabled = !busy;
         btnPower.Enabled = !busy;
-        btnUpdate.Enabled = !busy;
+        btnUpdate.Enabled = !busy && !updating;
         cbStrategy.Enabled = !busy;
         txtCustom.ReadOnly = busy;
         chkStopFirst.Enabled = !busy;
+        cbCand.Enabled = cbSpeed.Enabled = !busy;
         foreach (var c in chkServices) c.Enabled = !busy;
         btnAddToList.Enabled = !busy;
         prog.Visible = busy;
+        RefreshTray();
     }
 
     List<Target> BuildTargets(List<string> custom)
@@ -223,6 +267,19 @@ public partial class MainForm
         return list;
     }
 
+    List<DeepService> BuildDeepServices(List<string> custom)
+    {
+        var list = new List<DeepService>();
+        for (int i = 0; i < chkServices.Length; i++)
+        {
+            if (!chkServices[i].Checked) continue;
+            var svc = TestTargets.Services[i];
+            if (DeepProbes.Table.TryGetValue(svc.Short, out var specs)) list.Add(new DeepService { Short = svc.Short, Name = svc.Name, Specs = specs });
+        }
+        foreach (var d in custom) list.Add(DeepProbes.ForDomain(d));
+        return list;
+    }
+
     TestResult MakeResult(string name, Strategy st, int order, List<(Target Target, bool Ok)> checks)
     {
         var res = new TestResult { Name = name, Strategy = st, Order = order, Total = checks.Count, Ok = checks.Count(x => x.Ok) };
@@ -235,19 +292,36 @@ public partial class MainForm
         return res;
     }
 
-    async Task RunAutoAsync()
+    async Task RunAutoAsync(bool deep)
     {
-        if (!Strategy.IsValidZapretDir(cfg.ZapretPath)) { ShowPage(3); MessageBox.Show("Сначала укажите папку zapret.", AppSettings.AppName); return; }
+        if (!Strategy.IsValidZapretDir(cfg.ZapretPath)) { ShowPage(PgSettings); MessageBox.Show("Сначала укажите папку zapret.", AppSettings.AppName); return; }
         if (strategies.Count == 0) { MessageBox.Show("В папке нет стратегий (general*.bat).", AppSettings.AppName); return; }
+        if (restarting || diagRunning) { MessageBox.Show("Подождите: сейчас идёт перезапуск обхода или диагностика.", AppSettings.AppName); return; }
 
         var custom = ParseDomains(txtCustom.Text);
         var targets = BuildTargets(custom);
         if (targets.Count == 0) { MessageBox.Show("Отметьте хотя бы один сервис или впишите свои домены.", AppSettings.AppName); return; }
+        var deepSvcs = deep ? BuildDeepServices(custom) : null;
 
         cfg.TestServices = TestTargets.Services.Where((svc, idx) => chkServices[idx].Checked).Select(svc => svc.Name).ToList();
         cfg.CustomDomains = custom;
         cfg.StopOnFirstSuccess = chkStopFirst.Checked;
+        cfg.AutoMode = deep ? "deep" : "quick";
         cfg.Save();
+
+        if (deep)
+        {
+            int k = cfg.DeepCandidates;
+            int t1 = (int)Math.Ceiling(strategies.Count * 8 / 60.0);
+            int t2 = (int)Math.Ceiling(k * DeepRepeats * 10 / 60.0), t2max = (int)Math.Ceiling(k * DeepRepeats * 36 / 60.0);
+            var w = MessageBox.Show(
+                "Глубокий режим проверяет в два этапа.\n\n" +
+                "Этап 1: быстрая проверка всех стратегий (" + strategies.Count + " шт.), около " + t1 + " мин.\n" +
+                "Этап 2: до " + k + " лучших стратегий проверяются загрузкой данных, " + DeepRepeats + " повтора. Обычно " + t2 + " мин, при сбоях до " + t2max + " мин.\n\n" +
+                "Трафик: до ~15 МБ на каждую стратегию на этапе 2 (до " + k * 15 + " МБ всего). На ограниченном или платном интернете осторожно.\n\n" +
+                "Начать?", "Глубокий автоподбор", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (w != DialogResult.Yes) return;
+        }
 
         if (custom.Count > 0)
         {
@@ -283,6 +357,7 @@ public partial class MainForm
         prog.Maximum = strategies.Count + 1;
         prog.Value = 0;
         Cursor = Cursors.AppStarting;
+        string stage = deep ? "Этап 1 из 2: " : "";
 
         try
         {
@@ -290,7 +365,7 @@ public partial class MainForm
             cfg.DriverMayLinger = true;
             cfg.Save();
 
-            lblAuto.Text = "Проверка без обхода…";
+            lblAuto.Text = stage + "проверка без обхода…";
             var baseline = await Tester.Check(targets, ct);
             var baseRes = MakeResult("(без обхода)", null, -1, baseline);
             results.Add(baseRes);
@@ -298,12 +373,13 @@ public partial class MainForm
             RenderResults(false);
             if (baseRes.Ok == baseRes.Total) AddLog("Автоподбор: без обхода всё из списка и так открывается — проверьте, не включён ли VPN.");
 
+            bool stopFirst = !deep && cfg.StopOnFirstSuccess;
             int n = 0;
             foreach (var st in strategies)
             {
                 ct.ThrowIfCancellationRequested();
                 n++;
-                lblAuto.Text = "(" + n + "/" + strategies.Count + ") " + st.Name + "…";
+                lblAuto.Text = stage + "(" + n + "/" + strategies.Count + ") " + st.Name + "…";
                 TestResult res;
                 if (!runner.Start(cfg.ZapretPath, st, GameMode(), out string err))
                 {
@@ -321,13 +397,15 @@ public partial class MainForm
                 prog.Value = n + 1;
                 RenderResults(false);
 
-                if (cfg.StopOnFirstSuccess && res.Strategy != null && res.Ok == res.Total && res.Total > 0)
+                if (stopFirst && res.Strategy != null && res.Ok == res.Total && res.Total > 0)
                 {
                     lblAuto.Text = "Готово: найдена стратегия, при которой открылось всё — " + st.Name + ".";
                     prog.Value = prog.Maximum;
                     return;
                 }
             }
+
+            if (deep) await DeepStageAsync(deepSvcs, ct);
             lblAuto.Text = "Готово.";
         }
         catch (OperationCanceledException)
@@ -344,16 +422,76 @@ public partial class MainForm
             runner.Stop(true);
             cfg.DriverMayLinger = false;
             RestoreTimestamps();
-            cfg.Save();
             Cursor = Cursors.Default;
             SetAutoBusy(false);
             RenderResults(true);
+            SaveLastAuto(deep);
             UpdateUi();
+            if (!ct.IsCancellationRequested)
+                Notify("auto-done", false, "Автоподбор завершён", lblAuto.Text, ToolTipIcon.Info, () => ShowTab(PgAuto));
         }
+    }
+
+    async Task DeepStageAsync(List<DeepService> svcs, CancellationToken ct)
+    {
+        int k = cfg.DeepCandidates;
+        var quick = results.Where(r => r.Strategy != null && !(r is DeepResult)).ToList();
+        var cands = quick.Where(r => r.Total > 0 && r.Ok == r.Total).OrderBy(r => r.Order).Take(k).ToList();
+        if (cands.Count == 0)
+        {
+            var partial = quick.Where(r => r.Ok > 0).OrderByDescending(r => r.Ok).ThenBy(r => r.Order).ToList();
+            var ask = MessageBox.Show(
+                "Ни одна стратегия не открыла всё.\n\n" +
+                "Да — проверить глубоко лучшие частично работающие (до " + k + " шт.).\n" +
+                "Нет — проверить все стратегии (" + quick.Count + " шт.): это намного дольше и расходует больше трафика.\n" +
+                "Отмена — закончить на результатах быстрой проверки.",
+                "Глубокий автоподбор", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+            if (ask == DialogResult.Cancel) return;
+            cands = ask == DialogResult.Yes ? partial.Take(k).ToList() : quick;
+            if (cands.Count == 0) { AddLog("Автоподбор: нет стратегий для глубокой проверки."); return; }
+        }
+
+        prog.Maximum += cands.Count * DeepRepeats;
+        for (int i = 0; i < cands.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var st = cands[i].Strategy;
+            int ci = i + 1;
+            lblAuto.Text = "Этап 2 из 2: " + st.Name + " (" + ci + "/" + cands.Count + "), запуск…";
+            if (!runner.Start(cfg.ZapretPath, st, GameMode(), out string err))
+            {
+                AddLog("Автоподбор: «" + st.Name + "» не запустилась на этапе 2: " + err);
+                prog.Value = Math.Min(prog.Maximum, prog.Value + DeepRepeats);
+                continue;
+            }
+            await Task.Delay(800, ct);
+            var dr = await DeepTester.EvaluateAsync(st, cands[i].Order, svcs, cfg.SpeedThresholdKB, DeepRepeats, r =>
+            {
+                lblAuto.Text = "Этап 2 из 2: " + st.Name + " (" + ci + "/" + cands.Count + "), повтор " + r + " из " + DeepRepeats;
+                prog.Value = Math.Min(prog.Maximum, prog.Value + 1);
+            }, ct);
+            runner.Stop(false);
+
+            int idx = results.FindIndex(x => x.Order == dr.Order && x.Strategy == st);
+            if (idx >= 0) results[idx] = dr; else results.Add(dr);
+            AddLog("Автоподбор (глубокий): " + dr.Row);
+            RenderResults(false);
+        }
+        prog.Value = prog.Maximum;
+    }
+
+    void SaveLastAuto(bool deep)
+    {
+        var best = resultView.FirstOrDefault(x => x.Strategy != null);
+        if (best == null) return;
+        cfg.LastAutoAt = DateTime.Now.ToString("o");
+        cfg.LastAutoResult = (deep ? "deep: " : "quick: ") + RowText(best);
+        cfg.Save();
     }
 
     static string RowText(TestResult r)
     {
+        if (r is DeepResult d) return d.Row;
         string mark = r.Strategy == null ? "·" : (r.Ok == r.Total ? "✓" : (r.Ok == 0 ? "✗" : "~"));
         var bad = new List<string>();
         bad.AddRange(r.FailedGroups);
@@ -365,7 +503,8 @@ public partial class MainForm
     void RenderResults(bool sorted)
     {
         var list = sorted
-            ? results.OrderByDescending(x => x.Ok).ThenBy(x => x.Order).ToList()
+            ? results.OrderByDescending(x => x is DeepResult).ThenByDescending(x => (x as DeepResult)?.Rank ?? 0)
+                     .ThenByDescending(x => x.Ok).ThenBy(x => x.Order).ToList()
             : results.OrderBy(x => x.Order).ToList();
         resultView = list;
         lbResults.SetItems(list.Select(RowText));
