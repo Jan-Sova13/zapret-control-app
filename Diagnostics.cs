@@ -40,11 +40,11 @@ public static class DiagRunner
     // Коды ошибок WinDivertOpen (Win32) по документации WinDivert
     static readonly Dictionary<int, string> WinDivertCodes = new Dictionary<int, string>
     {
-        [2] = "Файлы драйвера WinDivert не найдены. Вероятно, их удалил антивирус: добавьте папку zapret в исключения и нажмите «Обновить Zapret».",
+        [2] = "Файлы драйвера WinDivert не найдены. Вероятно, их удалил антивирус: добавьте папку Zapret в исключения и нажмите «Обновить Zapret».",
         [5] = "Отказано в доступе: программа должна работать от имени администратора.",
         [87] = "WinDivert не принял фильтр (неверный параметр). Выберите другую стратегию или нажмите «Обновить Zapret».",
         [577] = "Windows не смогла проверить цифровую подпись драйвера WinDivert. Файл мог быть повреждён или заменён антивирусом: обновите Zapret. На Windows Server 2016 драйвер не загрузится при включённом Secure Boot.",
-        [654] = "Загружена несовместимая версия драйвера WinDivert (от другой программы). Закройте программы с WinDivert, выключите и включите обход или перезагрузите компьютер.",
+        [654] = "Загружена несовместимая версия драйвера WinDivert (от другой программы). Закройте программы с WinDivert, выключите и включите Zapret или перезагрузите компьютер.",
         [1275] = "Драйвер заблокирован: антивирус, защита Windows (в том числе «Целостность памяти») или виртуальная среда без поддержки драйверов.",
         [1753] = "Не запущена служба Windows «Base Filtering Engine» (BFE). Включите её в services.msc.",
     };
@@ -52,7 +52,7 @@ public static class DiagRunner
     public static List<DiagCheck> Build(DiagInput d) => new List<DiagCheck>
     {
         new DiagCheck { Title = "Права администратора", Run = ct => Task.FromResult(Admin()) },
-        new DiagCheck { Title = "Папка zapret", Run = ct => Task.FromResult(Folder(d)) },
+        new DiagCheck { Title = "Папка Zapret", Run = ct => Task.FromResult(Folder(d)) },
         new DiagCheck { Title = "Драйвер WinDivert", Run = ct => Task.Run(() => Driver(d), ct).WaitAsync(ct) },
         new DiagCheck { Title = "Конфликтующие программы", Run = ct => Task.Run(() => Conflicts(d), ct).WaitAsync(ct) },
         new DiagCheck { Title = "VPN и системный прокси", Run = ct => Task.Run(VpnProxy, ct).WaitAsync(ct) },
@@ -135,7 +135,7 @@ public static class DiagRunner
     static CheckResult Folder(DiagInput d)
     {
         if (string.IsNullOrWhiteSpace(d.ZapretPath))
-            return R(Sev.Fail, "Папка zapret не выбрана.", "Укажите папку на вкладке «Настройки» или скачайте zapret кнопкой «Обновить Zapret».");
+            return R(Sev.Fail, "Папка Zapret не выбрана.", "Укажите папку на вкладке «Настройки» или скачайте Zapret кнопкой «Обновить Zapret».");
         if (!File.Exists(Path.Combine(d.ZapretPath, "bin", "winws.exe")))
             return R(Sev.Fail, "В папке нет bin\\winws.exe.", "Проверьте путь или нажмите «Обновить Zapret». Возможно, антивирус удалил файлы.");
         if (!Directory.Exists(Path.Combine(d.ZapretPath, "lists")))
@@ -149,13 +149,13 @@ public static class DiagRunner
         bool onedrive = d.ZapretPath.IndexOf("OneDrive", StringComparison.OrdinalIgnoreCase) >= 0;
         if (cyr || onedrive)
             return R(Sev.Warn, "Путь «" + d.ZapretPath + "» содержит " + (cyr ? "кириллицу" : "OneDrive") + ".",
-                "Перенесите zapret в простую папку, например C:\\zapret: такие пути часто ломают запуск winws.");
+                "Перенесите Zapret в простую папку, например C:\\zapret: такие пути часто ломают запуск winws.");
         return R(Sev.Ok, "Папка в порядке, стратегий: " + count + ".");
     }
 
     static CheckResult Driver(DiagInput d)
     {
-        if (!Strategy.IsValidZapretDir(d.ZapretPath)) return R(Sev.Unknown, "Папка zapret не выбрана — проверять нечего.");
+        if (!Strategy.IsValidZapretDir(d.ZapretPath)) return R(Sev.Unknown, "Папка Zapret не выбрана — проверять нечего.");
 
         string bin = Path.Combine(d.ZapretPath, "bin");
         var missing = new List<string>();
@@ -163,7 +163,7 @@ public static class DiagRunner
         if (!File.Exists(Path.Combine(bin, "WinDivert.dll"))) missing.Add("WinDivert.dll");
         if (missing.Count > 0)
             return R(Sev.Fail, "Рядом с winws.exe нет файлов: " + string.Join(", ", missing) + ".",
-                "Вероятно, их удалил антивирус. Добавьте папку zapret в исключения и нажмите «Обновить Zapret».");
+                "Вероятно, их удалил антивирус. Добавьте папку Zapret в исключения и нажмите «Обновить Zapret».");
 
         int code = FindWinDivertCode(d.WinwsTail);
         if (code > 0 && WinDivertCodes.TryGetValue(code, out var advice))
@@ -171,7 +171,7 @@ public static class DiagRunner
 
         bool svc = ServiceRunning("WinDivert") || ServiceRunning("WinDivert14");
         if (d.BypassRunning && !svc)
-            return R(Sev.Warn, "Обход включён, но служба драйвера WinDivert не запущена.", "Выключите и снова включите обход; если повторяется — смотрите журнал.");
+            return R(Sev.Warn, "Zapret включён, но служба драйвера WinDivert не запущена.", "Выключите и снова включите Zapret; если повторяется — смотрите журнал.");
         return R(Sev.Ok, d.BypassRunning ? "Файлы драйвера на месте, служба WinDivert работает." : "Файлы драйвера на месте.");
     }
 
@@ -206,11 +206,11 @@ public static class DiagRunner
             foreach (var p in ps) p.Dispose();
         }
         if (found.Count > 0)
-            return R(Sev.Fail, string.Join("; ", found) + ".", "Остановите другие обходы: два перехватчика трафика одновременно конфликтуют.");
+            return R(Sev.Fail, string.Join("; ", found) + ".", "Остановите другие программы обхода: два перехватчика трафика одновременно конфликтуют.");
 
         if (!d.BypassRunning && (ServiceRunning("WinDivert") || ServiceRunning("WinDivert14")))
-            return R(Sev.Warn, "Служба WinDivert работает, хотя обход выключен.", "Драйвером пользуется другая программа (например, другой обход). Закройте её или перезагрузите компьютер.");
-        return R(Sev.Ok, "Других обходов и перехватчиков не найдено.");
+            return R(Sev.Warn, "Служба WinDivert работает, хотя Zapret выключен.", "Драйвером пользуется другая программа (например, другая программа обхода). Закройте её или перезагрузите компьютер.");
+        return R(Sev.Ok, "Других программ обхода и перехватчиков не найдено.");
     }
 
     static CheckResult VpnProxy()
@@ -233,7 +233,7 @@ public static class DiagRunner
         if (notes.Count == 0)
             return R(Sev.Ok, route != null ? "Маршрут в интернет: " + route.Name + ". VPN в режиме TUN и системный прокси не найдены." : "VPN в режиме TUN и системный прокси не найдены.");
         return R(Sev.Warn, string.Join("; ", notes) + ".",
-            "Трафик через VPN или прокси идёт мимо zapret. Для проверки отключите VPN/прокси на время работы обхода.");
+            "Трафик через VPN или прокси идёт мимо Zapret. Для проверки отключите VPN/прокси на время работы Zapret.");
     }
 
     static async Task<CheckResult> Internet(CancellationToken ct)
@@ -353,7 +353,7 @@ public static class DiagRunner
         double min = Math.Abs((DateTimeOffset.UtcNow - date.Value).TotalMinutes);
         if (min > 5)
             return R(Sev.Warn, "Время компьютера отличается от точного примерно на " + (int)min + " мин (сверка по " + via + ").",
-                "Неверное время ломает TLS: сайты не открываются, а обход выглядит нерабочим. Параметры → Время и язык → Дата и время → «Синхронизировать».");
+                "Неверное время ломает TLS: сайты не открываются, а Zapret выглядит нерабочим. Параметры → Время и язык → Дата и время → «Синхронизировать».");
         return R(Sev.Ok, "Время совпадает с серверным (расхождение меньше 5 минут).");
     }
 
@@ -362,20 +362,19 @@ public static class DiagRunner
         if (d.Targets == null || d.Targets.Count == 0) return R(Sev.Unknown, "Не выбраны сервисы и домены для проверки (вкладка автоподбора).");
         var res = await Tester.Check(d.Targets, ct);
         var lines = new List<string>();
-        bool onlyTg = true;
+
         foreach (var g in res.GroupBy(x => x.Target.Group ?? x.Target.Domain))
         {
             string name = TestTargets.Services.FirstOrDefault(s => s.Short == g.Key)?.Name ?? g.Key;
             int bad = g.Count(x => !x.Ok);
             if (bad == 0) continue;
-            if (g.Key != "TG") onlyTg = false;
+
             lines.Add(name + ": не открылось " + bad + " из " + g.Count());
         }
-        string mode = d.BypassRunning ? "обход включён (" + d.StrategyName + ")" : "обход выключен";
+        string mode = d.BypassRunning ? "Zapret включён (" + d.StrategyName + ")" : "Zapret выключен";
         if (lines.Count == 0) return R(Sev.Ok, "Все выбранные сервисы открываются; " + mode + ".");
-        if (!d.BypassRunning) return R(Sev.Warn, string.Join("; ", lines) + "; " + mode + ".", "Включите обход и повторите диагностику.");
-        return R(onlyTg ? Sev.Warn : Sev.Fail, string.Join("; ", lines) + "; " + mode + ".",
-            onlyTg ? "Telegram zapret чаще всего не лечит." : "Запустите автоподбор и выберите другую стратегию; проверьте остальные пункты отчёта.");
+        if (!d.BypassRunning) return R(Sev.Warn, string.Join("; ", lines) + "; " + mode + ".", "Включите Zapret и повторите диагностику.");
+        return R(Sev.Fail, string.Join("; ", lines) + "; " + mode + ".", "Запустите автоподбор и выберите другую стратегию; проверьте остальные пункты отчёта.");
     }
 
     static CheckResult Antivirus(DiagInput d)
@@ -400,7 +399,7 @@ public static class DiagRunner
         string list = string.Join(", ", avs.Distinct());
         bool defender = avs.Any(a => a.IndexOf("defender", StringComparison.OrdinalIgnoreCase) >= 0);
         if (!defender)
-            return R(Sev.Warn, "Установлен: " + list + ".", "Проверьте вручную, что папка zapret добавлена в исключения этого антивируса, иначе он может удалять файлы WinDivert.");
+            return R(Sev.Warn, "Установлен: " + list + ".", "Проверьте вручную, что папка Zapret добавлена в исключения этого антивируса, иначе он может удалять файлы WinDivert.");
         if (exErr || string.IsNullOrWhiteSpace(d.ZapretPath))
             return R(Sev.Unknown, "Установлен: " + list + ". Исключения Защитника прочитать не удалось.");
 
@@ -411,8 +410,8 @@ public static class DiagRunner
             return x.Length > 0 && (zp.Equals(x, StringComparison.OrdinalIgnoreCase) || zp.StartsWith(x + "\\", StringComparison.OrdinalIgnoreCase));
         });
         return excluded
-            ? R(Sev.Ok, "Установлен: " + list + ". Папка zapret есть в исключениях Защитника.")
-            : R(Sev.Warn, "Установлен: " + list + ". Папки zapret нет в исключениях Защитника.",
+            ? R(Sev.Ok, "Установлен: " + list + ". Папка Zapret есть в исключениях Защитника.")
+            : R(Sev.Warn, "Установлен: " + list + ". Папки Zapret нет в исключениях Защитника.",
                 "Защитник может удалить WinDivert. Добавьте папку в исключения вручную (Безопасность Windows → Защита от вирусов → Управление настройками). Программа исключения не добавляет.");
     }
 
@@ -434,7 +433,7 @@ public static class DiagRunner
                 "Безопасность Windows → Безопасность устройства → Изоляция ядра → «Целостность памяти»: выключите и перезагрузите компьютер. Программа этого не меняет.");
         if (d.BypassRunning) return R(Sev.Ok, "«Целостность памяти» включена, но драйвер загружен — проблем не видно.");
         return R(Sev.Warn, "«Целостность памяти» включена: на некоторых системах она блокирует драйвер WinDivert (ошибка 1275).",
-            "Если обход не запускается, выключите её: Безопасность Windows → Безопасность устройства → Изоляция ядра. Программа этого не меняет.");
+            "Если Zapret не запускается, выключите её: Безопасность Windows → Безопасность устройства → Изоляция ядра. Программа этого не меняет.");
     }
 
     static CheckResult Timestamps(DiagInput d)
@@ -444,7 +443,7 @@ public static class DiagRunner
         if (on == null) return R(Sev.Unknown, "Не удалось определить состояние TCP timestamps.");
         if (on == true) return R(Sev.Ok, "TCP timestamps включены (" + mode + ").");
         if (d.ManageTimestamps && !d.BypassRunning) return R(Sev.Ok, "TCP timestamps выключены; " + mode + ".");
-        if (d.ManageTimestamps) return R(Sev.Warn, "Обход включён, но TCP timestamps выключены.", "Часть стратегий без них не работает: перезапустите обход.");
+        if (d.ManageTimestamps) return R(Sev.Warn, "Zapret включён, но TCP timestamps выключены.", "Часть стратегий без них не работает: перезапустите Zapret.");
         return R(Sev.Warn, "TCP timestamps выключены, программа ими не управляет.",
             "Часть стратегий требует timestamps. Включите опцию управления в «Настройки» (продвинутый режим).");
     }

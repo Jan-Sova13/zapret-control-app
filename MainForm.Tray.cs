@@ -39,7 +39,7 @@ public partial class MainForm
             Icon = Icon ?? SystemIcons.Application,
             Text = AppSettings.AppName,
             ContextMenuStrip = menu,
-            Visible = true,
+            Visible = cfg.Notifications != "offhide",
         };
         tray.MouseClick += (s, e) =>
         {
@@ -48,6 +48,33 @@ public partial class MainForm
         };
         tray.DoubleClick += (s, e) => ShowMain();
         tray.BalloonTipClicked += (s, e) => balloonAction?.Invoke();
+    }
+
+    bool trayTipShown;
+
+    /// <summary>У отключённой кнопки подсказка стандартным ToolTip не показывается, поэтому следим за мышью на родителе.</summary>
+    void TrayHideTip(Point p)
+    {
+        bool over = !btnTrayHide.Enabled && btnTrayHide.Bounds.Contains(p);
+        if (over && !trayTipShown)
+        {
+            trayTipShown = true;
+            tip.Show("Включите значок в трее в настройках", headerInfo, btnTrayHide.Left, btnTrayHide.Bottom + Ui.S(4), 4000);
+        }
+        else if (!over && trayTipShown)
+        {
+            trayTipShown = false;
+            tip.Hide(headerInfo);
+        }
+    }
+
+    /// <summary>Режим «Выключены + убрать значок из трея»: значка нет, сворачивать некуда.</summary>
+    void ApplyTrayMode()
+    {
+        bool on = cfg.Notifications != "offhide";
+        if (tray != null) tray.Visible = on;
+        btnTrayHide.Enabled = on;
+        chkTray.Enabled = cfg.AutoStartApp && on;
     }
 
     void RebuildStrategyMenu()
@@ -83,7 +110,7 @@ public partial class MainForm
     /// <summary>Уведомление Windows. Не показывается при активном окне, одно и то же событие — не чаще раза в 10 минут.</summary>
     void Notify(string key, bool important, string title, string text, ToolTipIcon icon, Action onClick)
     {
-        if (tray == null || shuttingDown || cfg.Notifications == "off") return;
+        if (tray == null || shuttingDown || cfg.Notifications == "off" || cfg.Notifications == "offhide") return;
         if (cfg.Notifications == "important" && !important) return;
         if (WindowActive) return;
         var now = DateTime.Now;

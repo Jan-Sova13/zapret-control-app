@@ -36,7 +36,7 @@ public partial class MainForm
 
         var fl = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Padding = Ui.Pad(0, 10, 0, 0), WrapContents = false, Margin = Padding.Empty };
         btnSaveAll = Btn("Сохранить изменения", Accent, 200, 34);
-        btnSaveRestart = Btn("Сохранить и перезапустить обход", Accent, 290, 34);
+        btnSaveRestart = Btn("Сохранить и перезапустить Zapret", Accent, 290, 34);
         btnRevertAll = Btn("Отменить правки", Line, 170, 34);
         btnSaveAll.Margin = btnSaveRestart.Margin = Ui.Pad(0, 0, 10, 0);
         btnSaveAll.Click += (s, e) => SaveAllLists();
@@ -80,22 +80,22 @@ public partial class MainForm
         if (IsIpList(name))
         {
             sb.AppendLine(IsExcludeList(name)
-                ? "IP-адреса и подсети, которые НЕ нужно обрабатывать обходом."
-                : "IP-адреса и подсети, к которым применяется обход.");
+                ? "IP-адреса и подсети, которые Zapret НЕ должен обрабатывать."
+                : "IP-адреса и подсети, к которым применяется Zapret.");
             sb.AppendLine("• По одной записи в строке: 1.2.3.4, подсеть 10.0.0.0/8, IPv6 — 2001:db8::/32.");
             sb.Append("• Без портов, схем и комментариев в конце строки. Строки с # в начале — комментарии.");
         }
         else
         {
             sb.AppendLine(IsExcludeList(name)
-                ? "Домены, которые НЕ нужно обрабатывать обходом (исключения)."
-                : "Домены, к которым применяется обход.");
+                ? "Домены, которые Zapret НЕ должен обрабатывать (исключения)."
+                : "Домены, к которым применяется Zapret.");
             sb.AppendLine("• По одному домену в строке, только имя: example.com — без http://, без путей (/…), без пробелов и порта.");
             sb.AppendLine("• Поддомены учитываются автоматически: example.com покрывает и www.example.com, и cdn.example.com.");
             sb.AppendLine("• Маски со звёздочкой не поддерживаются. Регистр не важен. Кириллические домены — в punycode (xn--…).");
             sb.Append("• Строки с # в начале — комментарии. Файл не должен быть пустым (при пустом файле программа добавит заглушку).");
         }
-        if (user) sb.Append("\n★ Это ваш список: он не затирается при обновлении zapret.");
+        if (user) sb.Append("\n★ Это ваш список: он не затирается при обновлении Zapret.");
         return sb.ToString();
     }
 
@@ -114,7 +114,7 @@ public partial class MainForm
         string dir = Path.Combine(cfg.ZapretPath ?? "", "lists");
         if (!Strategy.IsValidZapretDir(cfg.ZapretPath) || !Directory.Exists(dir))
         {
-            var l = Caption("Папка zapret не выбрана. Укажите её на вкладке «Настройки» или скачайте zapret кнопкой «Обновить Zapret» внизу.", Fonts.Body, Muted, 30);
+            var l = Caption("Папка Zapret не выбрана. Укажите её на вкладке «Настройки» или скачайте Zapret кнопкой «Обновить Zapret» в настройках.", Fonts.Body, Muted, 30);
             host.Controls.Add(l);
             SetListButtons(false);
             host.ResumeLayout(true);
@@ -134,7 +134,7 @@ public partial class MainForm
             .ToList();
 
         host.Controls.Add(Caption("Свои списки", Fonts.Heading, TextC, 32));
-        var sub = Caption("Сюда вносите свои домены и адреса. Эти файлы не затираются при обновлении zapret.", Fonts.Small, Muted, 24);
+        var sub = Caption("Сюда вносите свои домены и адреса. Эти файлы не затираются при обновлении Zapret.", Fonts.Small, Muted, 24);
         sub.Margin = Ui.Pad(0, 0, 0, 8);
         host.Controls.Add(sub);
         foreach (var f in user) AddEditorCard(host, f);
@@ -146,7 +146,7 @@ public partial class MainForm
 
         var warn = new Note
         {
-            Text = "Это стоковые файлы из релиза zapret. Лучше их не менять: при обновлении zapret они будут сброшены. " +
+            Text = "Это стоковые файлы из релиза Zapret. Лучше их не менять: при обновлении Zapret они будут сброшены. " +
                    "Свои добавления вносите в свои списки (★) выше.",
             Font = Fonts.Body, BackColor = Bg, ForeColor = DangerText, Height = Ui.S(60), Margin = Ui.Pad(0, 0, 0, 4),
         };
@@ -315,7 +315,7 @@ public partial class MainForm
                 ed.Loading = false;
                 ed.Dirty = false;
                 UpdateEditorTitle(ed);
-                AddLog("Сохранён список " + ed.Name + (runner.IsRunning ? " (чтобы применить, перезапустите обход)" : ""));
+                AddLog("Сохранён список " + ed.Name + (runner.IsRunning ? " (чтобы применить, перезапустите Zapret)" : ""));
             }
             catch (Exception ex)
             {

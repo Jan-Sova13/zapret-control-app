@@ -21,6 +21,7 @@ public partial class MainForm
     async Task BackgroundUpdateCheckAsync()
     {
         if (!cfg.AutoCheckUpdates || shuttingDown) return;
+        _ = CheckZapretVersionAsync();
         var r = await AppUpdate.CheckAsync(CancellationToken.None);
         if (shuttingDown || IsDisposed || r.Status != UpdateStatus.Available) return;
         availableUpdate = r.Info;
@@ -39,14 +40,14 @@ public partial class MainForm
         if (shuttingDown || IsDisposed) return;
         footerGrid.ColumnStyles[2].Width = Ui.S(300);
         lblNewVersion.Visible = true;
-        btnGitHub.MidHighlight = true;
+        btnGitHub.LeftHighlight = true;
     }
 
     void HideNewVersion()
     {
         footerGrid.ColumnStyles[2].Width = 0;
         lblNewVersion.Visible = false;
-        btnGitHub.MidHighlight = false;
+        btnGitHub.LeftHighlight = false;
     }
 
     async Task ManualUpdateCheckAsync()
@@ -74,14 +75,15 @@ public partial class MainForm
 
     void ShowVersionMenu()
     {
-        var items = new[] { "Что нового", "Проверить обновления", "Сообщить о проблеме", "Открыть папку настроек и журналов" };
+        var items = new[] { "GitHub: Zapret Control App", "Что нового", "Проверить обновления", "Сообщить о проблеме", "Открыть папку настроек и журналов" };
         PopupMenu.Show(btnGitHub, items, i =>
         {
             switch (i)
             {
-                case 0: OpenUrl(AppUpdate.RepoUrl + "/releases/tag/" + AppUpdate.Format(AppUpdate.Current)); break;
-                case 1: _ = ManualUpdateCheckAsync(); break;
-                case 2: OpenUrl(AppUpdate.RepoUrl + "/issues"); break;
+                case 0: OpenUrl(AppUpdate.RepoUrl); break;
+                case 1: OpenUrl(AppUpdate.RepoUrl + "/releases/tag/" + AppUpdate.Format(AppUpdate.Current)); break;
+                case 2: _ = ManualUpdateCheckAsync(); break;
+                case 3: OpenUrl(AppUpdate.RepoUrl + "/issues"); break;
                 default:
                     try
                     {
@@ -91,7 +93,7 @@ public partial class MainForm
                     catch (Exception ex) { AddLog("Не удалось открыть папку: " + ex.Message); }
                     break;
             }
-        }, btnGitHub.MidBounds.X, true, Ui.S(340));
+        }, btnGitHub.LeftBounds.X, true, Ui.S(340));
     }
 
     Form Dlg(string title, int w, int h)
@@ -118,41 +120,47 @@ public partial class MainForm
 
         root.Controls.Add(Caption(AppSettings.AppName + "  " + AppUpdate.Format(AppUpdate.Current), Fonts.Heading, TextC, 34), 0, 0);
 
-        var host = new ScrollHost { Dock = DockStyle.Fill, BackColor = Bg, Margin = Padding.Empty };
-        host.Content.BackColor = Bg;
-        host.Content.Controls.Add(new FitNote
-        {
-            BackColor = Surface, ForeColor = TextC, Font = Fonts.Body, Height = Ui.S(400),
-            Text =
-                "Лицензия: GNU GPL-3.0.\n" +
-                "Оболочка для Zapret (Flowseal/zapret-discord-youtube): запускает winws.exe, подбирает стратегии, следит за работой обхода. " +
-                "Сам Zapret — отдельный проект, скачивается кнопкой «Обновить Zapret».\n\n" +
-                "Что программа делает в системе:\n" +
-                "• Хранит настройки (в том числе тему и режим интерфейса), журнал сбоев crash.log, бэкапы списков и временные файлы обновления в %AppData%\\Zapret Control App.\n" +
-                "• Пока обход включён: работает winws.exe и загружен драйвер WinDivert. При выключении, закрытии или падении программы winws завершается, драйвер выгружается.\n" +
-                "• TCP timestamps: если выключены, включаются на время работы и возвращаются обратно (если программа упадёт, вернутся при следующем запуске). Можно отключить в настройках (продвинутый режим).\n" +
-                "• Автозапуск (только если стоит галочка): задача планировщика «Zapret Control App» — нужна, чтобы стартовать сразу с правами администратора. Снимете галочку — задача удалится.\n" +
-                "• Сторожевой режим (включён по умолчанию): пока обход включён, раз в несколько минут открывает 2–4 сайта выбранных сервисов; после сна, смены сети или падения winws.exe перезапускает обход. Настройки системы при этом не меняются.\n" +
-                "• Значок в трее и уведомления Windows показывают состояние и важные события.\n" +
-                "• Диагностика только читает состояние системы (процессы, службы, реестр, DNS, время) и ничего не меняет.\n" +
-                "• Сеть: запросы к сайтам для проверок; к api.github.com и github.com — для проверки и загрузки обновлений программы (при запуске и раз в сутки, можно отключить) и Zapret (только по кнопке «Обновить Zapret»).\n" +
-                "• Обновление программы: по кнопке «Установить и перезапустить» новый exe скачивается в %AppData%\\Zapret Control App\\update, проверяется контрольная сумма, после выхода из программы текущий exe заменяется.\n" +
-                "• Hosts, настройки DNS, службы Windows и реестр не меняются (кроме временной службы драйвера WinDivert и задачи автозапуска).",
-        });
-        root.Controls.Add(host, 0, 1);
+        var box = new LinkText { Dock = DockStyle.Fill, BackColor = Surface, ForeColor = TextC, Margin = Padding.Empty };
+        box.LinkClicked += OpenUrl;
+        root.Controls.Add(box, 0, 1);
 
-        var row = ButtonRow();
-        var bRepo = Btn("Репозиторий программы", Line, 220, 34);
-        var bZapret = Btn("Zapret (Flowseal)", Line, 190, 34);
+        var row = Grid(4, 1);
+        row.Padding = Ui.Pad(0, 10, 0, 0);
+        Cols(row, Abs(270), Abs(250), Fill(), Abs(120));
+        var bRepo = Btn("GitHub: Zapret Control App", Line, 260, 34);
+        var bZapret = Btn("GitHub: Zapret (Flowseal)", Line, 240, 34);
         var bClose = Btn("Закрыть", Accent, 120, 34);
+        bRepo.Anchor = bZapret.Anchor = bClose.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         bRepo.Margin = bZapret.Margin = Ui.Pad(0, 0, 10, 0);
         bRepo.Click += (s, e) => OpenUrl(AppUpdate.RepoUrl);
         bZapret.Click += (s, e) => OpenUrl("https://github.com/Flowseal/zapret-discord-youtube");
         bClose.Click += (s, e) => f.Close();
-        row.Controls.AddRange(new Control[] { bRepo, bZapret, bClose });
+        row.Controls.Add(bRepo, 0, 0);
+        row.Controls.Add(bZapret, 1, 0);
+        row.Controls.Add(bClose, 3, 0);
         root.Controls.Add(row, 0, 2);
 
         f.Controls.Add(root);
+        f.Shown += (s, e) => box.SetContent(new (string Text, string Url)[]
+        {
+            ("Лицензия: ", null),
+            ("GNU GPL-3.0", "https://www.gnu.org/licenses/gpl-3.0.html"),
+            (".\nОболочка для ", null),
+            ("Zapret (Flowseal/zapret-discord-youtube)", "https://github.com/Flowseal/zapret-discord-youtube"),
+            (": запускает winws.exe, подбирает стратегии, следит за работой Zapret. " +
+             "Сам Zapret — отдельный проект, скачивается кнопкой «Обновить Zapret».\n\n" +
+             "Что программа делает в системе:\n" +
+             "• Хранит настройки (в том числе тему и режим интерфейса), журнал сбоев crash.log, бэкапы списков и временные файлы обновления в %AppData%\\Zapret Control App. Всё это удаляется кнопкой «Удалить все настройки» (продвинутый режим).\n" +
+             "• Пока Zapret включён: работает winws.exe и загружен драйвер WinDivert. При выключении, закрытии или падении программы winws завершается, драйвер выгружается.\n" +
+             "• TCP timestamps: если выключены, включаются на время работы и возвращаются обратно (если программа упадёт, вернутся при следующем запуске). Можно отключить в настройках (продвинутый режим).\n" +
+             "• Автозапуск (только если стоит галочка): задача планировщика «Zapret Control App» — нужна, чтобы стартовать сразу с правами администратора. Снимете галочку — задача удалится.\n" +
+             "• Сторожевой режим (включён по умолчанию): пока Zapret включён, раз в несколько минут открывает 2–4 сайта выбранных сервисов; после сна, смены сети или падения winws.exe перезапускает Zapret. Настройки системы при этом не меняются.\n" +
+             "• Значок в трее и уведомления Windows показывают состояние и важные события; значок можно убрать в настройках.\n" +
+             "• Диагностика только читает состояние системы (процессы, службы, реестр, DNS, время) и ничего не меняет.\n" +
+             "• Сеть: запросы к сайтам для проверок; к api.github.com и github.com — для проверки и загрузки обновлений программы и Zapret (при запуске и раз в сутки, можно отключить). Zapret скачивается только по кнопке «Обновить Zapret».\n" +
+             "• Обновление программы: по кнопке «Установить и перезапустить» новый exe скачивается в %AppData%\\Zapret Control App\\update, проверяется контрольная сумма, после выхода из программы текущий exe заменяется.\n" +
+             "• Hosts, настройки DNS, службы Windows и реестр не меняются (кроме временной службы драйвера WinDivert и задачи автозапуска).", null),
+        }, AccentLight);
         f.ShowDialog(this);
     }
 
@@ -287,7 +295,7 @@ public partial class MainForm
 
         if (install)
         {
-            AddLog("Установка обновления: программа закрывается, обход будет возвращён после запуска новой версии.");
+            AddLog("Установка обновления: программа закрывается, Zapret будет включён после запуска новой версии.");
             forceClose = true;
             Close();
         }

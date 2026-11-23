@@ -73,15 +73,12 @@ public static class AppUpdate
             };
             info.Tag = Format(info.Version);
 
-            string sumsUrl = null;
             JsonElement? best = null;
             if (rootEl.TryGetProperty("assets", out var assets))
             {
                 foreach (var a in assets.EnumerateArray())
                 {
                     string name = a.GetProperty("name").GetString() ?? "";
-                    string url = a.GetProperty("browser_download_url").GetString() ?? "";
-                    if (name.IndexOf("sha256", StringComparison.OrdinalIgnoreCase) >= 0 && IsGithubHttps(url)) { sumsUrl = url; continue; }
                     bool exe = name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase), zip = name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
                     if (!exe && !zip) continue;
                     if (best == null || (exe && !best.Value.GetProperty("name").GetString().EndsWith(".exe", StringComparison.OrdinalIgnoreCase))) best = a;
@@ -100,27 +97,10 @@ public static class AppUpdate
                     string d = dg.GetString() ?? "";
                     if (d.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)) info.Sha256 = d.Substring(7).ToLowerInvariant();
                 }
-                if (info.Sha256 == null && sumsUrl != null) info.Sha256 = await ReadSumAsync(http, sumsUrl, info.AssetName, ct);
             }
             return new UpdateCheck { Status = UpdateStatus.Available, Info = info };
         }
         catch { return new UpdateCheck { Status = UpdateStatus.Failed }; }
-    }
-
-    static async Task<string> ReadSumAsync(HttpClient http, string url, string assetName, CancellationToken ct)
-    {
-        try
-        {
-            string text = await http.GetStringAsync(url, ct);
-            foreach (var raw in text.Replace("\r", "").Split('\n'))
-            {
-                var m = Regex.Match(raw.Trim(), @"^([0-9a-fA-F]{64})\s+\*?(.+)$");
-                if (m.Success && m.Groups[2].Value.Trim().Equals(assetName, StringComparison.OrdinalIgnoreCase)) return m.Groups[1].Value.ToLowerInvariant();
-            }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch { }
-        return null;
     }
 
     /// <summary>Описание релиза обычным текстом (без разметки Markdown).</summary>

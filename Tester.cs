@@ -33,8 +33,7 @@ public static class TestTargets
     {
         new Service { Name = "YouTube",   Short = "YT",   Domains = new[] { "www.youtube.com", "i.ytimg.com", "youtubei.googleapis.com" } },
         new Service { Name = "Discord",   Short = "Disc", Domains = new[] { "discord.com", "gateway.discord.gg", "cdn.discordapp.com", "media.discordapp.net" } },
-        new Service { Name = "Instagram", Short = "Inst", Domains = new[] { "www.instagram.com", "i.instagram.com", "static.cdninstagram.com" } },
-        new Service { Name = "Telegram",  Short = "TG",   Domains = new[] { "web.telegram.org", "telegram.org", "t.me" } },
+        new Service { Name = "Cloudflare", Short = "CF", Domains = new[] { "cloudflare-ech.com", "cloudflareinsights.com", "cloudflarestream.com" } },
     };
 
     public static string[] ServiceNames => Services.Select(s => s.Name).ToArray();

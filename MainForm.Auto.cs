@@ -7,13 +7,20 @@ public partial class MainForm
 {
     const int DeepRepeats = 3;
 
+    const string AddDomainsHelp =
+        "Свои домены для проверки\n\n" +
+        "• Добавить в список обхода — записывает домены из поля в «Свой список: домены для обхода». " +
+        "Zapret обрабатывает только домены из своих списков: если домена там нет, Zapret на него не действует, и проверка покажет, что он «не открылся» при любой стратегии.\n" +
+        "• Взять из моих списков — копирует в поле домены из «Свой список: домены для обхода», чтобы проверять и их.\n\n" +
+        "Сервисы выше (YouTube, Discord, Cloudflare) уже есть в стоковых списках, добавлять их не нужно.\n" +
+        "Чтобы изменения в списке применились, перезапустите Zapret.";
     Check[] chkServices;
     Check chkStopFirst;
     ScrollText txtCustom;
     TipList lbResults;
     ThinProgress prog;
     Label lblAuto;
-    RoundButton btnAuto, btnDeep, btnAutoCancel, btnApplyBest, btnAddToList;
+    RoundButton btnAuto, btnDeep, btnAutoCancel, btnApplyBest, btnAddToList, btnImportDomains;
     Dropdown cbCand, cbSpeed;
     TableLayoutPanel autoLeft;
     Control autoAdvRow;
@@ -26,14 +33,14 @@ public partial class MainForm
         var p = Page();
         var t = Grid(1, 3);
         Cols(t, Fill());
-        Rows(t, Abs(90), Fill(), Abs(100));
+        Rows(t, Abs(90), Fill(), Abs(108));
 
         var hint = Caption(
             "Для каждой стратегии программа запускает winws, открывает по HTTPS сайты выбранных сервисов и ваши домены и считает, сколько открылось. " +
             "Стратегии проверяются по очереди: одновременно их запускать нельзя, они бы перехватывали трафик друг друга. " +
             "«Глубокий» режим дополнительно качает данные с сервисов и повторяет проверку 3 раза: так видно замедление и нестабильность. " +
             "Видеопоток YouTube (googlevideo) напрямую проверить нельзя — адреса подписаны, поэтому берутся скрипт плеера и картинки. " +
-            "VPN на время проверки лучше выключить. Telegram zapret чаще всего не лечит.",
+            "VPN на время проверки лучше выключить.",
             Fonts.Small, Muted, 90);
         hint.Dock = DockStyle.Fill;
         hint.TextAlign = ContentAlignment.TopLeft;
@@ -45,7 +52,7 @@ public partial class MainForm
         var left = Grid(1, 7);
         autoLeft = left;
         left.Margin = Ui.Pad(0, 0, 16, 0);
-        Rows(left, Abs(26), Abs(66), Abs(34), Abs(0), Abs(26), Fill(), Abs(46));
+        Rows(left, Abs(26), Abs(36), Abs(34), Abs(0), Abs(26), Fill(), Abs(46));
         left.Controls.Add(Lbl("Что проверять:", Muted), 0, 0);
 
         var sf = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Margin = Padding.Empty };
@@ -91,15 +98,16 @@ public partial class MainForm
         left.Controls.Add(txtCustom, 0, 5);
 
         var lf = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Padding = Ui.Pad(0, 12, 0, 0), Margin = Padding.Empty };
-        btnAddToList = Btn("Добавить мои домены в список обхода", Line, 340, 34);
-        tip.SetToolTip(btnAddToList,
-            "Записывает домены из поля выше в «Свой список: домены для обхода».\n" +
-            "zapret обрабатывает только домены из своих списков: если домена там нет,\n" +
-            "обход на него не действует, и проверка покажет, что он «не открылся»\n" +
-            "при любой стратегии. Сервисы выше (YouTube, Discord…) уже есть в стоковых\n" +
-            "списках, добавлять их не нужно.");
+        btnAddToList = Btn("Добавить в список обхода", Line, 220, 34);
         btnAddToList.Click += (s, e) => AddDomainsToUserList(ParseDomains(txtCustom.Text), false);
+        btnImportDomains = Btn("Взять из моих списков", Line, 200, 34);
+        btnImportDomains.Margin = Ui.Pad(10, 0, 0, 0);
+        btnImportDomains.Click += (s, e) => ImportUserDomains();
         lf.Controls.Add(btnAddToList);
+        lf.Controls.Add(btnImportDomains);
+        var helpAdd = HelpBtn("Добавить мои домены", AddDomainsHelp);
+        helpAdd.Margin = Ui.Pad(10, 0, 0, 0);
+        lf.Controls.Add(helpAdd);
         left.Controls.Add(lf, 0, 6);
         body.Controls.Add(left, 0, 0);
 
@@ -113,11 +121,15 @@ public partial class MainForm
         body.Controls.Add(right, 1, 0);
         t.Controls.Add(body, 0, 1);
 
-        var bottom = Grid(1, 3);
-        Rows(bottom, Abs(24), Abs(48), Abs(26));
-        bottom.Controls.Add(Lbl("Запустить автоподбор:", Muted), 0, 0);
+        var bottom = Grid(2, 3);
+        Cols(bottom, (SizeType.Percent, 48), (SizeType.Percent, 52));
+        Rows(bottom, Abs(38), Abs(44), Abs(26));
+        var lblRun = Caption("Запустить автоподбор:", Fonts.Body, Muted, 38);
+        lblRun.Dock = DockStyle.Fill;
+        lblRun.TextAlign = ContentAlignment.BottomLeft;
+        bottom.Controls.Add(lblRun, 0, 0);
 
-        var bf = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Padding = Ui.Pad(0, 4, 0, 0), WrapContents = false, Margin = Padding.Empty };
+        var bf = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Padding = Ui.Pad(0, 5, 0, 0), WrapContents = false, Margin = Padding.Empty };
         btnAuto = Btn("Быстрый", Accent, 130, 34);
         btnDeep = Btn("Глубокий", Accent, 130, 34);
         btnAutoCancel = Btn("Остановить", Danger, 130, 34);
@@ -130,8 +142,12 @@ public partial class MainForm
         btnDeep.Click += async (s, e) => await RunAutoAsync(true);
         btnAutoCancel.Click += (s, e) => autoCts?.Cancel();
         btnApplyBest.Click += (s, e) => ApplySelectedResult();
-        bf.Controls.AddRange(new Control[] { btnAuto, btnDeep, btnAutoCancel, btnApplyBest });
+        bf.Controls.AddRange(new Control[] { btnAuto, btnDeep, btnAutoCancel });
         bottom.Controls.Add(bf, 0, 1);
+
+        var bf2 = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Padding = Ui.Pad(0, 5, 0, 0), WrapContents = false, Margin = Padding.Empty };
+        bf2.Controls.Add(btnApplyBest);
+        bottom.Controls.Add(bf2, 1, 1);
 
         var pf = Grid(2, 1);
         Cols(pf, Abs(420), Fill());
@@ -140,6 +156,7 @@ public partial class MainForm
         lblAuto.Dock = DockStyle.Fill;
         pf.Controls.Add(prog, 0, 0);
         pf.Controls.Add(lblAuto, 1, 0);
+        bottom.SetColumnSpan(pf, 2);
         bottom.Controls.Add(pf, 0, 2);
         t.Controls.Add(bottom, 0, 2);
 
@@ -225,7 +242,7 @@ public partial class MainForm
             File.WriteAllText(path, cur + nl + string.Join("\r\n", add) + "\r\n", new UTF8Encoding(false));
             AddLog("В list-general-user.txt добавлено: " + string.Join(", ", add));
             if (ed != null) LoadEditor(ed);
-            if (!silent) MessageBox.Show("Добавлено в «Свой список: домены для обхода»: " + add.Count + ".\nЧтобы применилось, перезапустите обход.", AppSettings.AppName);
+            if (!silent) MessageBox.Show("Добавлено в «Свой список: домены для обхода»: " + add.Count + ".\nЧтобы применилось, перезапустите Zapret.", AppSettings.AppName);
             return true;
         }
         catch (Exception ex)
@@ -235,6 +252,31 @@ public partial class MainForm
         }
     }
 
+    /// <summary>Домены из «Свой список: домены для обхода» (без заглушки и комментариев) добавляются в поле доменов для проверки.</summary>
+    void ImportUserDomains()
+    {
+        if (!Strategy.IsValidZapretDir(cfg.ZapretPath)) { ShowPage(PgSettings); return; }
+        string path = Path.Combine(cfg.ZapretPath, "lists", "list-general-user.txt");
+        List<string> found;
+        try { found = File.Exists(path) ? ParseDomains(File.ReadAllText(path)).Where(d => d != "domain.example.abc").ToList() : new List<string>(); }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Не удалось прочитать список: " + ex.Message, AppSettings.AppName);
+            return;
+        }
+
+        var have = ParseDomains(txtCustom.Text);
+        var add = found.Where(d => !have.Contains(d)).ToList();
+        if (add.Count == 0)
+        {
+            MessageBox.Show(found.Count == 0 ? "В «Своём списке: домены для обхода» пока нет своих доменов." : "Все домены из ваших списков уже есть в поле.", AppSettings.AppName);
+            return;
+        }
+        string cur = txtCustom.Text;
+        string nl = cur.Length == 0 || cur.EndsWith("\n") ? "" : Environment.NewLine;
+        txtCustom.Text = cur + nl + string.Join(Environment.NewLine, add);
+    }
+
     void SetAutoBusy(bool busy)
     {
         autoRunning = busy;
@@ -242,13 +284,13 @@ public partial class MainForm
         btnAutoCancel.Enabled = busy;
         btnApplyBest.Enabled = !busy;
         btnPower.Enabled = !busy;
-        btnUpdate.Enabled = !busy && !updating;
+        btnUpdate.Enabled = btnUpdateSettings.Enabled = !busy && !updating;
         cbStrategy.Enabled = !busy;
         txtCustom.ReadOnly = busy;
         chkStopFirst.Enabled = !busy;
         cbCand.Enabled = cbSpeed.Enabled = !busy;
         foreach (var c in chkServices) c.Enabled = !busy;
-        btnAddToList.Enabled = !busy;
+        btnAddToList.Enabled = btnImportDomains.Enabled = !busy;
         prog.Visible = busy;
         RefreshTray();
     }
@@ -294,9 +336,9 @@ public partial class MainForm
 
     async Task RunAutoAsync(bool deep)
     {
-        if (!Strategy.IsValidZapretDir(cfg.ZapretPath)) { ShowPage(PgSettings); MessageBox.Show("Сначала укажите папку zapret.", AppSettings.AppName); return; }
+        if (!Strategy.IsValidZapretDir(cfg.ZapretPath)) { ShowPage(PgSettings); MessageBox.Show("Сначала укажите папку Zapret.", AppSettings.AppName); return; }
         if (strategies.Count == 0) { MessageBox.Show("В папке нет стратегий (general*.bat).", AppSettings.AppName); return; }
-        if (restarting || diagRunning) { MessageBox.Show("Подождите: сейчас идёт перезапуск обхода или диагностика.", AppSettings.AppName); return; }
+        if (restarting || diagRunning) { MessageBox.Show("Подождите: сейчас идёт перезапуск Zapret или диагностика.", AppSettings.AppName); return; }
 
         var custom = ParseDomains(txtCustom.Text);
         var targets = BuildTargets(custom);
@@ -331,7 +373,7 @@ public partial class MainForm
             {
                 var ask = MessageBox.Show(
                     "Этих доменов нет в списках обхода:\n" + string.Join(", ", missing) +
-                    "\n\nБез этого zapret их не обрабатывает, и проверка покажет, что они не открываются ни на одной стратегии.\n\n" +
+                    "\n\nБез этого Zapret их не обрабатывает, и проверка покажет, что они не открываются ни на одной стратегии.\n\n" +
                     "Добавить их в «Свой список: домены для обхода»?",
                     "Автоподбор", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
                 if (ask == DialogResult.Cancel) return;
@@ -365,13 +407,13 @@ public partial class MainForm
             cfg.DriverMayLinger = true;
             cfg.Save();
 
-            lblAuto.Text = stage + "проверка без обхода…";
+            lblAuto.Text = stage + "проверка без Zapret…";
             var baseline = await Tester.Check(targets, ct);
-            var baseRes = MakeResult("(без обхода)", null, -1, baseline);
+            var baseRes = MakeResult("(без Zapret)", null, -1, baseline);
             results.Add(baseRes);
             prog.Value = 1;
             RenderResults(false);
-            if (baseRes.Ok == baseRes.Total) AddLog("Автоподбор: без обхода всё из списка и так открывается — проверьте, не включён ли VPN.");
+            if (baseRes.Ok == baseRes.Total) AddLog("Автоподбор: без Zapret всё из списка и так открывается — проверьте, не включён ли VPN.");
 
             bool stopFirst = !deep && cfg.StopOnFirstSuccess;
             int n = 0;

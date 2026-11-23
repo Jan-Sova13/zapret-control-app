@@ -8,11 +8,11 @@ public partial class MainForm : Form
     const string GameFilterHelp =
         "Игровой фильтр\n" +
         "\n" +
-        "Обычно zapret обрабатывает только веб-трафик и голос Discord.\n" +
+        "Обычно Zapret обрабатывает только веб-трафик и голос Discord.\n" +
         "Многие онлайн-игры ходят по другим портам (1024–65535),\n" +
-        "и по умолчанию zapret их не трогает.\n" +
+        "и по умолчанию Zapret их не трогает.\n" +
         "\n" +
-        "Если включить фильтр, zapret начнёт обрабатывать трафик\n" +
+        "Если включить фильтр, Zapret начнёт обрабатывать трафик\n" +
         "на всех этих портах. Это нужно, только если игре или её серверам\n" +
         "реально требуется обход блокировки.\n" +
         "\n" +
@@ -26,7 +26,7 @@ public partial class MainForm : Form
 
     const int PgLog = 0, PgLists = 1, PgAuto = 2, PgSettings = 3, PgDiag = 4, PgWatch = 5;
     static readonly string[] PageNames = { "Журнал", "Списки", "Проверка стратегий (автоподбор)", "Настройки", "Диагностика", "Периодическая проверка" };
-    static readonly int[] SimplePages = { PgLog, PgAuto, PgSettings };
+    static readonly int[] SimplePages = { PgLog, PgAuto, PgDiag, PgSettings };
     static readonly int[] AdvancedPages = { PgLog, PgLists, PgAuto, PgDiag, PgWatch, PgSettings };
 
     readonly AppSettings cfg;
@@ -42,11 +42,11 @@ public partial class MainForm : Form
     string lastRouteLog;
     int[] tabMap = SimplePages;
 
-    TableLayoutPanel root, pnlWarn, footerGrid;
+    TableLayoutPanel root, pnlWarn, footerGrid, headerInfo;
     RoundButton btnPower, btnGameHelp, btnTrayHide, btnUpdate, btnWarnRefresh, btnWarnClose;
     SplitButton btnGitHub;
     SwitchToggle swAdvanced;
-    Label lblStatus, lblSub, lblWarn, lblNewVersion;
+    Label lblStatus, lblSub, lblWarn, lblNewVersion, lblZapretNew;
     Dropdown cbStrategy, cbGame, cbTheme;
     TabStrip tabs;
     Panel[] pages;
@@ -64,10 +64,11 @@ public partial class MainForm : Form
     {
         cfg = AppSettings.Load();
         Theme.Current = Theme.ByName(cfg.Theme);
-        startHidden = autostart && cfg.StartInTray;
+        startHidden = autostart && cfg.StartInTray && cfg.Notifications != "offhide";
 
         BuildUi();
         BuildTray();
+        ApplyTrayMode();
         _ = Handle;   // winws пишет в журнал из своих потоков, даже если окно скрыто
         RefreshThemeBits();
         Application.AddMessageFilter(new WheelFilter());
@@ -137,6 +138,7 @@ public partial class MainForm : Form
 
     void HideToTray()
     {
+        if (tray != null && !tray.Visible) return;
         Hide();
     }
 
@@ -205,7 +207,7 @@ public partial class MainForm : Form
         if (!Strategy.IsValidZapretDir(cfg.ZapretPath))
         {
             ShowPage(PgSettings);
-            if (!silent) MessageBox.Show("Сначала укажите папку zapret (или скачайте его кнопкой «Обновить Zapret» вверху).", AppSettings.AppName,
+            if (!silent) MessageBox.Show("Сначала укажите папку Zapret (или скачайте его кнопкой «Обновить Zapret» в настройках).", AppSettings.AppName,
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return false;
         }
@@ -228,7 +230,7 @@ public partial class MainForm : Form
             {
                 lastStartError = err;
                 AddLog("Не удалось запустить: " + err);
-                if (!silent) MessageBox.Show(err, "Не удалось включить обход", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                if (!silent) MessageBox.Show(err, "Не удалось включить Zapret", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 Runner.CleanupDriver();
                 RestoreTimestamps();
                 UpdateUi();
@@ -237,7 +239,7 @@ public partial class MainForm : Form
             lastStartError = null;
             cfg.Strategy = st.Name;
             cfg.Save();
-            AddLog("Обход включён: " + st.Name + " (PID " + runner.Pid + ")");
+            AddLog("Zapret включён: " + st.Name + " (PID " + runner.Pid + ")");
             OnBypassStarted();
         }
         finally { Cursor = Cursors.Default; }
@@ -254,7 +256,7 @@ public partial class MainForm : Form
             cfg.DriverMayLinger = false;
             RestoreTimestamps();
             cfg.Save();
-            AddLog("Обход выключен.");
+            AddLog("Zapret выключен.");
             OnBypassStopped();
         }
         finally { Cursor = Cursors.Default; }
@@ -266,7 +268,7 @@ public partial class MainForm : Form
         if (runner.IsRunning) { StopBypass(); StartBypass(true); }
     }
 
-    /// <summary>Другой winws или служба zapret конфликтуют с нашим запуском: предлагаем остановить.</summary>
+    /// <summary>Другой winws или служба Zapret конфликтуют с нашим запуском: предлагаем остановить.</summary>
     bool ResolveConflicts(bool silent)
     {
         var foreign = SystemTools.ForeignWinws(runner.Pid);
@@ -278,13 +280,13 @@ public partial class MainForm : Form
                       (foreign.Count > 0 ? "другой процесс winws.exe (" + foreign.Count + " шт.)" : "");
         if (silent)
         {
-            AddLog("Конфликт: уже запущена " + what + ". Автозапуск обхода пропущен.");
+            AddLog("Конфликт: уже запущена " + what + ". Автозапуск Zapret пропущен.");
             foreach (var p in foreign) p.Dispose();
             return false;
         }
 
-        var r = MessageBox.Show("Уже работает " + what + ".\nДва обхода одновременно конфликтуют.\n\nОстановить их и продолжить?",
-            "Конфликт обходов", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        var r = MessageBox.Show("Уже работает " + what + ".\nДва экземпляра Zapret одновременно конфликтуют.\n\nОстановить их и продолжить?",
+            "Конфликт Zapret", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
         if (r != DialogResult.Yes)
         {
             foreach (var p in foreign) p.Dispose();
@@ -314,7 +316,7 @@ public partial class MainForm : Form
 
             var msgs = new List<string>();
             if (data.Foreign > 0)
-                msgs.Add("Запущен другой winws.exe (" + data.Foreign + "): он перехватывает тот же трафик, обход может работать неправильно.");
+                msgs.Add("Запущен другой winws.exe (" + data.Foreign + "): он перехватывает тот же трафик, Zapret может работать неправильно.");
             if (data.Route != null)
             {
                 string desc = data.Route.Name + " | " + data.Route.Description + " | тип " + data.Route.Type +
@@ -322,7 +324,7 @@ public partial class MainForm : Form
                               " | VPN: " + (data.Route.IsVpn ? "да" : "нет");
                 if (desc != lastRouteLog) { lastRouteLog = desc; AddLog("Маршрут в интернет: " + desc); }
                 if (data.Route.IsVpn)
-                    msgs.Add("Похоже, весь интернет идёт через VPN-адаптер «" + data.Route.Name + "». В режиме TUN он может конфликтовать с zapret.");
+                    msgs.Add("Похоже, весь интернет идёт через VPN-адаптер «" + data.Route.Name + "». В режиме TUN он может конфликтовать с Zapret.");
             }
 
             if (force) warnDismissed = false;
@@ -340,8 +342,8 @@ public partial class MainForm : Form
         SuspendLayout();
         AutoScaleMode = AutoScaleMode.None;
         Text = AppSettings.AppName;
-        ClientSize = Ui.Sz(1200, 700);
-        MinimumSize = Ui.Sz(1180, 680);
+        ClientSize = Ui.Sz(1200, 760);
+        MinimumSize = Ui.Sz(1180, 790);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Bg;
         ForeColor = TextC;
@@ -384,8 +386,9 @@ public partial class MainForm : Form
         h.Controls.Add(btnPower, 0, 0);
 
         var info = Grid(3, 3);
+        headerInfo = info;
         info.BackColor = Surface;
-        Cols(info, Fill(), Abs(190), Abs(152));
+        Cols(info, Fill(), Abs(0), Abs(152));
         Rows(info, Abs(36), Abs(26), Fill());
 
         lblStatus = Caption("Zapret выключен", Fonts.Display, Muted, 36);
@@ -394,18 +397,26 @@ public partial class MainForm : Form
 
         btnUpdate = Btn("Обновить Zapret", Accent, 180, 34);
         btnUpdate.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+        btnUpdate.Visible = false;
         btnUpdate.Click += async (s, e) => await UpdateZapretAsync();
         info.Controls.Add(btnUpdate, 1, 0);
+
+        lblZapretNew = Caption("Вышла новая версия", Fonts.Small, DangerText, 26);
+        lblZapretNew.Dock = DockStyle.Fill;
+        lblZapretNew.Visible = false;
+        info.Controls.Add(lblZapretNew, 1, 1);
 
         btnTrayHide = Btn("Свернуть в трей", Line, 140, 34);
         btnTrayHide.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         btnTrayHide.Click += (s, e) => HideToTray();
         info.Controls.Add(btnTrayHide, 2, 0);
+        info.MouseMove += (s, e) => TrayHideTip(e.Location);
+        info.MouseLeave += (s, e) => TrayHideTip(new Point(-1, -1));
 
         lblSub = Caption("", Fonts.Small, Muted, 26);
         lblSub.Dock = DockStyle.Fill;
         info.Controls.Add(lblSub, 0, 1);
-        info.SetColumnSpan(lblSub, 3);
+
 
         var row = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Surface, Margin = Padding.Empty, Padding = Ui.Pad(0, 4, 0, 0), WrapContents = false };
         var l1 = Lbl("Стратегия", Muted);
@@ -528,9 +539,8 @@ public partial class MainForm : Form
         lblNewVersion.Visible = false;
         lblNewVersion.Click += (s, e) => { if (availableUpdate != null) ShowUpdateWindow(availableUpdate); };
 
-        btnGitHub = new SplitButton { Dock = DockStyle.Fill, MidText = AppUpdate.Format(AppUpdate.Current), Margin = Padding.Empty };
-        btnGitHub.LeftClick += (s, e) => OpenUrl(AppUpdate.RepoUrl);
-        btnGitHub.MidClick += (s, e) => ShowVersionMenu();
+        btnGitHub = new SplitButton { Dock = DockStyle.Fill, LeftText = AppUpdate.Format(AppUpdate.Current), Margin = Padding.Empty };
+        btnGitHub.LeftClick += (s, e) => ShowVersionMenu();
         btnGitHub.RightClick += (s, e) => ShowAbout();
         footerGrid.ColumnStyles[3] = new ColumnStyle(SizeType.Absolute, btnGitHub.NaturalWidth() + Ui.S(40));
 
@@ -649,10 +659,11 @@ public partial class MainForm : Form
             if (lblVersion != null)
                 lblVersion.Text = Strategy.IsValidZapretDir(cfg.ZapretPath)
                     ? "Установлена версия: " + (v ?? "неизвестно") + "  ·  стратегий: " + strategies.Count
-                    : "zapret в этой папке не найден";
+                    : "Zapret в этой папке не найден";
         }
         finally { loading = was; }
         listsLoaded = false;
+        RefreshZapretUpdateUi();
         if (pages != null && tabs != null && CurrentPage() == PgLists) ReloadListFiles(true);
     }
 }

@@ -37,7 +37,7 @@ public partial class MainForm
         diagHost.Content.Controls.Add(new FitNote
         {
             BackColor = Surface, ForeColor = Muted, Font = Fonts.Body, Height = Ui.S(60),
-            Text = "Нажмите «Начать диагностику»: проверятся права, папка zapret, драйвер, конфликты, VPN и прокси, интернет, DNS, время, доступность сервисов, антивирус, «Целостность памяти» и TCP timestamps. Это займёт не больше 30 секунд.",
+            Text = "Нажмите «Начать диагностику»: проверятся права, папка Zapret, драйвер, конфликты, VPN и прокси, интернет, DNS, время, доступность сервисов, антивирус, «Целостность памяти» и TCP timestamps. Это займёт не больше 30 секунд.",
         });
         t.Controls.Add(diagHost, 0, 2);
 
@@ -152,7 +152,7 @@ public partial class MainForm
         string header = AppSettings.AppName + " " + AppUpdate.Format(AppUpdate.Current) + " — отчёт диагностики\n" +
                         "Дата: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm") + "\n" +
                         "Windows: " + Environment.OSVersion.VersionString + (Environment.Is64BitOperatingSystem ? " (64 бит)" : "") + "\n" +
-                        "Обход: " + (runner.IsRunning ? "включён, " + runner.CurrentStrategy : "выключен") + "\n" +
+                        "Zapret: " + (runner.IsRunning ? "включён, " + runner.CurrentStrategy : "выключен") + "\n" +
                         "Итог: " + lblDiag.Text;
         try
         {

@@ -13,6 +13,7 @@ public partial class MainForm
     int problemRestarts, okChecks, badChecks;
     readonly List<DateTime> crashTimes = new List<DateTime>();
     readonly HashSet<string> skipLogged = new HashSet<string>();
+    HashSet<string> baseline;   // сервисы, ответившие в первой проверке после запуска: только за ними следим
     readonly List<string> winwsTail = new List<string>();
     System.Windows.Forms.Timer healthTimer, debounceTimer, firstCheckTimer;
 
@@ -90,6 +91,7 @@ public partial class MainForm
     void OnBypassStarted()
     {
         crashTimes.Clear();
+        baseline = null;
         problemRestarts = 0;
         lastCheckAt = DateTime.MinValue;
         skipLogged.Clear();
@@ -161,7 +163,7 @@ public partial class MainForm
         if (st == null || !Strategy.IsValidZapretDir(cfg.ZapretPath)) return false;
 
         restarting = true;
-        AddLog("Перезапуск обхода: " + reason + ".");
+        AddLog("Перезапуск Zapret: " + reason + ".");
         string dir = cfg.ZapretPath, game = GameMode(), err = null;
         bool ok = false;
         try
@@ -182,15 +184,19 @@ public partial class MainForm
         if (ok)
         {
             lastStartError = null;
-            AddLog("Обход перезапущен: " + st.Name + " (PID " + runner.Pid + ").");
-            if (setWorking) SetState(BypassState.Working);
+            AddLog("Zapret перезапущен: " + st.Name + " (PID " + runner.Pid + ").");
+            if (setWorking)
+            {
+                baseline = null;
+                SetState(BypassState.Working);
+            }
             ScheduleFirstCheck();
         }
         else
         {
             lastStartError = err;
             AddLog("Перезапуск не удался: " + err);
-            SetState(BypassState.Crashed, "не удалось перезапустить обход");
+            SetState(BypassState.Crashed, "не удалось перезапустить Zapret");
         }
         UpdateUi();
         return ok;
@@ -218,7 +224,7 @@ public partial class MainForm
     async Task CrashRestartAsync()
     {
         bool ok = await RestartAsync("winws.exe завершился сам", true);
-        if (ok) Notify("crash-restarted", true, "Zapret упал и перезапущен", "Обход снова работает.", ToolTipIcon.Warning, () => ShowTab(PgLog));
+        if (ok) Notify("crash-restarted", true, "Zapret упал и перезапущен", "Zapret снова работает.", ToolTipIcon.Warning, () => ShowTab(PgLog));
         else FinishCrash(true);
     }
 
@@ -228,13 +234,13 @@ public partial class MainForm
         RestoreTimestamps();
         SetState(BypassState.Crashed, auto ? "winws.exe упал и больше не перезапускается" : "winws.exe завершился сам");
         Notify("crash-final", true, "Zapret упал и больше не перезапускается",
-            auto ? "Слишком частые сбои, автоперезапуск остановлен. Подробности — в журнале." : "Обход остановлен. Подробности — в журнале.",
+            auto ? "Слишком частые сбои, автоперезапуск остановлен. Подробности — в журнале." : "Zapret остановлен. Подробности — в журнале.",
             ToolTipIcon.Error, () => ShowTab(PgLog));
     }
 
     void CheckNow()
     {
-        if (!runner.IsRunning) { AddLog("Проверка: обход выключен."); return; }
+        if (!runner.IsRunning) { AddLog("Проверка: Zapret выключен."); return; }
         _ = RunHealthCheckAsync(true);
     }
 
@@ -249,7 +255,7 @@ public partial class MainForm
         var list = new List<Target>();
         foreach (var svc in TestTargets.Services)
         {
-            if (svc.Short == "TG" || !cfg.TestServices.Contains(svc.Name)) continue;
+            if (!cfg.WatchServices.Contains(svc.Name)) continue;
             list.Add(new Target { Domain = svc.Domains[0], Group = svc.Short });
         }
         foreach (var d in cfg.CustomDomains)
@@ -257,10 +263,10 @@ public partial class MainForm
             if (list.Count >= 4) break;
             if (!list.Any(x => x.Domain == d)) list.Add(new Target { Domain = d });
         }
-        return list;
+        return baseline == null ? list : list.Where(t => baseline.Contains(t.Group ?? t.Domain)).ToList();
     }
 
-    static string FailText(List<(Target Target, bool Ok)> failed)
+    static List<string> FailNames(List<(Target Target, bool Ok)> failed)
     {
         var names = new List<string>();
         foreach (var f in failed)
@@ -268,6 +274,12 @@ public partial class MainForm
             string n = f.Target.Group == null ? f.Target.Domain : TestTargets.Services.First(x => x.Short == f.Target.Group).Name;
             if (!names.Contains(n)) names.Add(n);
         }
+        return names;
+    }
+
+    static string FailText(List<(Target Target, bool Ok)> failed)
+    {
+        var names = FailNames(failed);
         return string.Join(", ", names) + (names.Count == 1 ? " не отвечает" : " не отвечают");
     }
 
@@ -311,9 +323,17 @@ public partial class MainForm
                     return;
                 }
 
-                var failed = new List<(Target Target, bool Ok)>();
-                if (targets.Count > 0) failed = (await Tester.Check(targets, ct)).Where(x => !x.Ok).ToList();
+                var res = targets.Count > 0 ? await Tester.Check(targets, ct) : new List<(Target Target, bool Ok)>();
+                var failed = res.Where(x => !x.Ok).ToList();
                 if (!runner.IsRunning || restarting) return;
+
+                // Первая проверка после запуска задаёт, за какими сервисами следить: что не открывалось с самого начала, проблемой не считается
+                if (baseline == null && res.Any(x => x.Ok))
+                {
+                    baseline = new HashSet<string>(res.Where(x => x.Ok).Select(x => x.Target.Group ?? x.Target.Domain));
+                    if (failed.Count > 0) AddLog("Не отвечали с самого запуска и не учитываются в проверке: " + string.Join(", ", FailNames(failed)) + ".");
+                    failed = new List<(Target Target, bool Ok)>();
+                }
 
                 if (failed.Count == 0)
                 {
@@ -367,10 +387,10 @@ public partial class MainForm
     {
         if (!runner.IsRunning)
         {
-            if (state == BypassState.Crashed) return "✗ " + (stateDetail.Length > 0 ? stateDetail : "обход остановился из-за сбоя");
+            if (state == BypassState.Crashed) return "✗ " + (stateDetail.Length > 0 ? stateDetail : "Zapret остановился из-за сбоя");
             return Strategy.IsValidZapretDir(cfg.ZapretPath)
                 ? "Выберите стратегию и нажмите «Включить»"
-                : "Сначала укажите папку zapret на вкладке «Настройки»";
+                : "Сначала укажите папку Zapret на вкладке «Настройки»";
         }
         string st = "Стратегия: " + runner.CurrentStrategy;
         switch (state)
@@ -395,7 +415,7 @@ public partial class MainForm
     void RefreshWatchInfo()
     {
         if (lblWatchInfo == null) return;
-        lblWatchInfo.Text = !runner.IsRunning ? "Обход выключен."
+        lblWatchInfo.Text = !runner.IsRunning ? "Zapret выключен."
             : lastCheckAt == DateTime.MinValue ? "Проверок ещё не было."
             : "Последняя проверка: " + lastCheckAt.ToString("HH:mm:ss") + (lastCheckOk ? " ✓" : " ⚠");
     }
@@ -409,11 +429,11 @@ public partial class MainForm
         c.SuspendLayout();
 
         c.Controls.Add(Caption("Периодическая проверка и автовосстановление", Fonts.Heading, TextC, 32));
-        var sub = Caption("Пока обход включён, программа редко проверяет, что сервисы открываются, и сама оживляет обход после сна, смены сети или сбоя.", Fonts.Small, Muted, 26);
+        var sub = Caption("Пока Zapret включён, программа редко проверяет, что сервисы открываются, и сама оживляет Zapret после сна, смены сети или сбоя.", Fonts.Small, Muted, 26);
         sub.Margin = Ui.Pad(0, 0, 0, 10);
         c.Controls.Add(sub);
 
-        chkWatch = Chk("Проверять работу обхода и восстанавливать его");
+        chkWatch = Chk("Проверять работу Zapret и восстанавливать его");
         chkWatch.Checked = cfg.WatchEnabled;
         chkWatch.CheckedChanged += (s, e) =>
         {
@@ -423,11 +443,11 @@ public partial class MainForm
             ApplyWatchSettings();
         };
 
-        chkWake = Chk("Перезапускать обход после сна и смены сети");
+        chkWake = Chk("Перезапускать Zapret после сна и смены сети");
         chkWake.Checked = cfg.RestartOnWake;
         chkWake.CheckedChanged += (s, e) => { if (!loading) { cfg.RestartOnWake = chkWake.Checked; cfg.Save(); } };
 
-        chkCrash = Chk("Перезапускать обход после падения winws.exe (не больше 3 раз за 10 минут)");
+        chkCrash = Chk("Перезапускать Zapret после падения winws.exe (не больше 3 раз за 10 минут)");
         chkCrash.Checked = cfg.RestartOnCrash;
         chkCrash.CheckedChanged += (s, e) => { if (!loading) { cfg.RestartOnCrash = chkCrash.Checked; cfg.Save(); } };
 
@@ -436,6 +456,26 @@ public partial class MainForm
             chk.Margin = new Padding(chk.Margin.Left, 0, 0, Ui.S(8));
             c.Controls.Add(chk);
         }
+
+        c.Controls.Add(Caption("Какие сервисы проверять:", Fonts.Body, Muted, 28));
+        var svcRow = new FlowLayoutPanel { BackColor = Bg, Height = Ui.S(36), WrapContents = false, Margin = Ui.Pad(0, 0, 0, 8) };
+        foreach (var svc in TestTargets.Services)
+        {
+            var chk = Chk(svc.Name);
+            chk.Margin = Ui.Pad(0, 0, 14, 0);
+            chk.Checked = cfg.WatchServices.Contains(svc.Name);
+            string name = svc.Name;
+            chk.CheckedChanged += (s, e) =>
+            {
+                if (loading) return;
+                cfg.WatchServices.RemoveAll(x => x == name);
+                if (chk.Checked) cfg.WatchServices.Add(name);
+                cfg.Save();
+                baseline = null;
+            };
+            svcRow.Controls.Add(chk);
+        }
+        c.Controls.Add(svcRow);
 
         cbInterval = Drop(160);
         foreach (var o in new[] { ("Выкл", "0"), ("Каждые 2 минуты", "2"), ("Каждые 5 минут", "5"), ("Каждые 10 минут", "10") })
@@ -475,7 +515,8 @@ public partial class MainForm
         {
             BackColor = Surface, ForeColor = Muted, Height = Ui.S(120), Margin = Ui.Pad(0, 6, 0, 0),
             Text = "Как это работает:\n" +
-                   "• Проверка лёгкая: 2–4 сайта выбранных сервисов и ваши домены, Telegram не учитывается.\n" +
+                   "• Проверка лёгкая: по одному сайту выбранных сервисов и ваши домены.\n" +
+                   "• Следим только за сервисами, которые отвечали сразу после запуска Zapret: то, что не открывалось с самого начала, проблемой не считается.\n" +
                    "• «Проблемы» ставятся после двух неудачных проверок подряд.\n" +
                    "• Нет интернета — состояние «Нет сети», ничего не перезапускается.\n" +
                    "• Проверка не выполняется во время автоподбора, обновления и при VPN в режиме TUN.",
@@ -486,14 +527,23 @@ public partial class MainForm
         return p;
     }
 
-    Control OptionRow(string label, Control ctl)
+    Control OptionRow(string label, Control ctl, string help = null, string helpTitle = null)
     {
         var row = new FlowLayoutPanel { BackColor = Bg, Height = Ui.S(42), WrapContents = false, Margin = Ui.Pad(0, 0, 0, 4) };
-        var l = Lbl(label, Muted);
-        l.Margin = Ui.Pad(0, 8, 12, 0);
         ctl.Margin = Ui.Pad(0, 3, 0, 0);
-        row.Controls.Add(l);
+        if (label != null)
+        {
+            var l = Lbl(label, Muted);
+            l.Margin = Ui.Pad(0, 8, 12, 0);
+            row.Controls.Add(l);
+        }
         row.Controls.Add(ctl);
+        if (help != null)
+        {
+            var hb = HelpBtn(helpTitle ?? "Справка", help);
+            hb.Margin = Ui.Pad(10, 3, 0, 0);
+            row.Controls.Add(hb);
+        }
         return row;
     }
 }

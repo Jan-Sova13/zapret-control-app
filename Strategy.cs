@@ -141,17 +141,25 @@ public class Strategy
         catch { return null; }
     }
 
+    static readonly Regex TokenRx = new Regex(@"\d+|[^\W\d_]+", RegexOptions.Compiled);
+
+    /// <summary>Сравнение по словам и числам: «general (ALT)» идёт перед «general (ALT2)», числа сравниваются как числа.</summary>
     static int NaturalCompare(string a, string b)
     {
-        var pa = Regex.Split(a, @"(\d+)");
-        var pb = Regex.Split(b, @"(\d+)");
-        for (int i = 0; i < Math.Min(pa.Length, pb.Length); i++)
+        var ta = TokenRx.Matches(a);
+        var tb = TokenRx.Matches(b);
+        int n = Math.Min(ta.Count, tb.Count);
+        for (int i = 0; i < n; i++)
         {
+            string x = ta[i].Value, y = tb[i].Value;
+            bool nx = char.IsDigit(x[0]), ny = char.IsDigit(y[0]);
             int c;
-            if (long.TryParse(pa[i], out long x) && long.TryParse(pb[i], out long y)) c = x.CompareTo(y);
-            else c = string.Compare(pa[i], pb[i], StringComparison.OrdinalIgnoreCase);
+            if (nx && ny) c = long.TryParse(x, out long lx) && long.TryParse(y, out long ly) ? lx.CompareTo(ly) : string.CompareOrdinal(x, y);
+            else if (nx != ny) c = nx ? -1 : 1;
+            else c = string.Compare(x, y, StringComparison.OrdinalIgnoreCase);
             if (c != 0) return c;
         }
-        return pa.Length.CompareTo(pb.Length);
+        int d = ta.Count.CompareTo(tb.Count);
+        return d != 0 ? d : string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -70,7 +70,7 @@ public class Runner
         {
             int code = -1;
             try { code = _proc.ExitCode; } catch { }
-            error = "winws.exe сразу завершился (код " + code + "). Подробности — в журнале. Частые причины: антивирус удалил WinDivert, папка с кириллицей/OneDrive, другой обход уже запущен.";
+            error = "winws.exe сразу завершился (код " + code + "). Подробности — в журнале. Частые причины: антивирус удалил WinDivert, папка с кириллицей/OneDrive, другой Zapret уже запущен.";
             _proc = null;
             return false;
         }

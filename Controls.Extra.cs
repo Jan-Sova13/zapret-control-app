@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 
 namespace ZapretControlApp;
 
@@ -74,16 +75,16 @@ public class SwitchToggle : Control
     }
 }
 
-/// <summary>Составная кнопка из трёх отдельных секций: [значок + текст] [плашка версии] [«О программе»].</summary>
+/// <summary>Составная кнопка из двух отдельных секций: [значок + версия] и [«О программе»].</summary>
 public class SplitButton : Control
 {
     Image image;
     bool hi;
     int hot = -1, down = -1;
 
-    public string LeftText = "GitHub", MidText = "", RightText = "О программе";
+    public string LeftText = "", RightText = "О программе";
 
-    public event EventHandler LeftClick, MidClick, RightClick;
+    public event EventHandler LeftClick, RightClick;
 
     public SplitButton()
     {
@@ -94,7 +95,7 @@ public class SplitButton : Control
     }
 
     public Image Image { get => image; set { image = value; Invalidate(); } }
-    public bool MidHighlight { get => hi; set { hi = value; Invalidate(); } }
+    public bool LeftHighlight { get => hi; set { hi = value; Invalidate(); } }
 
     int TextW(string t) => TextRenderer.MeasureText(string.IsNullOrEmpty(t) ? " " : t, Font, new Size(int.MaxValue, Height), TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
 
@@ -102,18 +103,16 @@ public class SplitButton : Control
     {
         int pad = Ui.S(14), gap = Ui.S(3);
         int w0 = pad * 2 + (image != null ? Ui.S(18) + Ui.S(8) : 0) + TextW(LeftText);
-        int w1 = pad * 2 + TextW(MidText);
-        int w2 = pad * 2 + TextW(RightText);
+        int w1 = pad * 2 + TextW(RightText);
         return new[]
         {
             new Rectangle(0, 0, w0, Height - 1),
             new Rectangle(w0 + gap, 0, w1, Height - 1),
-            new Rectangle(w0 + w1 + gap * 2, 0, w2, Height - 1),
         };
     }
 
-    public int NaturalWidth() => Segs()[2].Right + 1;
-    public Rectangle MidBounds => Segs()[1];
+    public int NaturalWidth() => Segs()[1].Right + 1;
+    public Rectangle LeftBounds => Segs()[0];
 
     int Hit(Point pt)
     {
@@ -134,7 +133,6 @@ public class SplitButton : Control
         Invalidate();
         if (h < 0 || h != d) return;
         if (h == 0) LeftClick?.Invoke(this, EventArgs.Empty);
-        else if (h == 1) MidClick?.Invoke(this, EventArgs.Empty);
         else RightClick?.Invoke(this, EventArgs.Empty);
     }
 
@@ -153,7 +151,7 @@ public class SplitButton : Control
         var segs = Segs();
         for (int i = 0; i < segs.Length; i++)
         {
-            bool accent = i == 1 && hi;
+            bool accent = i == 0 && hi;
             Color fill = accent ? p.Danger : p.Line;
             if (i == hot && i == down) fill = Ui.Shade(fill, 0.22f);
             else if (i == hot) fill = Ui.Shade(fill, 0.12f);
@@ -168,7 +166,7 @@ public class SplitButton : Control
                 g.DrawImage(image, x, (Height - image.Height) / 2, image.Width, image.Height);
                 x += Ui.S(18) + Ui.S(8);
             }
-            string text = i == 0 ? LeftText : i == 1 ? MidText : RightText;
+            string text = i == 0 ? LeftText : RightText;
             TextRenderer.DrawText(g, text, Font, new Rectangle(x, 0, r.Right - x - Ui.S(10), Height), accent ? Color.White : p.TextC,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
         }
@@ -241,5 +239,134 @@ public class TipList : SimpleList
     {
         if (disposing) rowTip.Dispose();
         base.Dispose(disposing);
+    }
+}
+
+/// <summary>Текст на скруглённой подложке: его можно выделять и копировать, ссылки открываются кликом. Прокрутка — общая ThinScrollBar.</summary>
+public class LinkText : Control, IWheelTarget
+{
+    [DllImport("user32.dll")]
+    static extern int SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+
+    const int EM_LINESCROLL = 0x00B6;
+    const int EM_GETFIRSTVISIBLELINE = 0x00CE;
+
+    public readonly RichTextBox Box;
+    readonly ThinScrollBar bar = new ThinScrollBar();
+    readonly List<(int Start, int Length, string Url)> links = new List<(int, int, string)>();
+
+    public event Action<string> LinkClicked;
+
+    public LinkText()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        Box = new RichTextBox
+        {
+            BorderStyle = BorderStyle.None, ReadOnly = true, ScrollBars = RichTextBoxScrollBars.None, DetectUrls = false,
+            WordWrap = true, Font = Fonts.Body,
+        };
+        Controls.Add(Box);
+        Controls.Add(bar);
+        bar.Scroll += (s, e) =>
+        {
+            if (!Box.IsHandleCreated) return;
+            int cur = SendMessage(Box.Handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+            if (bar.Value != cur) SendMessage(Box.Handle, EM_LINESCROLL, 0, bar.Value - cur);
+        };
+        Box.TextChanged += (s, e) => SyncBar();
+        Box.SizeChanged += (s, e) => SyncBar();
+        Box.HandleCreated += (s, e) => SyncBar();
+        Box.VScroll += (s, e) => SyncBar();
+        Box.KeyUp += (s, e) => SyncBar();
+        Box.MouseMove += (s, e) => Box.Cursor = LinkAt(e.Location) != null ? Cursors.Hand : Cursors.IBeam;
+        Box.MouseUp += (s, e) =>
+        {
+            if (e.Button != MouseButtons.Left || Box.SelectionLength > 0) return;
+            string url = LinkAt(e.Location);
+            if (url != null) LinkClicked?.Invoke(url);
+        };
+    }
+
+    protected override void OnBackColorChanged(EventArgs e) { base.OnBackColorChanged(e); Box.BackColor = BackColor; }
+    protected override void OnForeColorChanged(EventArgs e) { base.OnForeColorChanged(e); Box.ForeColor = ForeColor; }
+    protected override void OnResize(EventArgs e) { base.OnResize(e); Relayout(); }
+
+    /// <summary>Части текста: Url == null — обычный текст, иначе ссылка.</summary>
+    public void SetContent(IEnumerable<(string Text, string Url)> parts, Color linkColor)
+    {
+        links.Clear();
+        Box.Clear();
+        using var underline = new Font(Box.Font, FontStyle.Underline);
+        foreach (var (text, url) in parts)
+        {
+            int start = Box.TextLength;
+            Box.SelectionStart = start;
+            Box.SelectionLength = 0;
+            Box.SelectionColor = url == null ? ForeColor : linkColor;
+            Box.SelectionFont = url == null ? Box.Font : underline;
+            Box.SelectedText = text;
+            if (url != null) links.Add((start, text.Length, url));
+        }
+        Box.Select(0, 0);
+        SyncBar();
+    }
+
+    string LinkAt(Point p)
+    {
+        if (links.Count == 0 || Box.TextLength == 0) return null;
+        int i = Box.GetCharIndexFromPosition(p);
+        foreach (var l in links)
+        {
+            if (i < l.Start || i >= l.Start + l.Length) continue;
+            // GetCharIndexFromPosition возвращает ближайший символ даже справа от конца строки, поэтому проверяем границы символа
+            var a = Box.GetPositionFromCharIndex(i);
+            var b = Box.GetPositionFromCharIndex(i + 1);
+            bool sameLine = Math.Abs(a.Y - b.Y) < Box.Font.Height / 2;
+            if (Math.Abs(p.Y - a.Y - Box.Font.Height / 2) <= Box.Font.Height / 2 + 2 && p.X >= a.X && (!sameLine || p.X <= b.X)) return l.Url;
+        }
+        return null;
+    }
+
+    void Relayout()
+    {
+        Box.SetBounds(Ui.S(12), Ui.S(10), Math.Max(10, Width - Ui.S(12) - Ui.S(24)), Math.Max(10, Height - Ui.S(20)));
+        bar.SetBounds(Width - Ui.S(14), Ui.S(6), Ui.S(8), Math.Max(10, Height - Ui.S(12)));
+        SyncBar();
+    }
+
+    void SyncBar()
+    {
+        if (!Box.IsHandleCreated) return;
+        int total = Box.GetLineFromCharIndex(Box.TextLength) + 1;
+        int page = Math.Max(1, Box.ClientSize.Height / Math.Max(1, Box.Font.Height));
+        bar.SetRange(total, page);
+        bar.SetValueSilent(SendMessage(Box.Handle, EM_GETFIRSTVISIBLELINE, 0, 0));
+    }
+
+    public bool Wheel(int delta)
+    {
+        if (!Box.IsHandleCreated || bar.MaxValue <= 0) return false;
+        int cur = SendMessage(Box.Handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+        int next = Math.Max(0, Math.Min(cur - delta * 3 / 120, bar.MaxValue));
+        if (next == cur) return false;
+        SendMessage(Box.Handle, EM_LINESCROLL, 0, next - cur);
+        SyncBar();
+        return true;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        try { PaintCore(e); }
+        catch (Exception ex) { Diag.Write(GetType().Name + ".OnPaint", ex); }
+    }
+
+    void PaintCore(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(Ui.ParentBack(this));
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = Ui.Round(new Rectangle(0, 0, Width - 1, Height - 1), Ui.R);
+        using (var br = new SolidBrush(BackColor)) g.FillPath(br, path);
+        using (var pen = new Pen(Theme.Current.Line)) g.DrawPath(pen, path);
     }
 }

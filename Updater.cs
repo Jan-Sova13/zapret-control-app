@@ -7,15 +7,15 @@ public static class Updater
 {
     const string Api = "https://api.github.com/repos/Flowseal/zapret-discord-youtube/releases/latest";
 
-    /// <summary>Скачивает последний релиз и полностью заменяет bin / lists / utils / .bat в папке zapret.
+    /// <summary>Скачивает последний релиз и полностью заменяет bin / lists / utils / .bat в папке Zapret.
     /// Свои списки (*-user.txt) сохраняются. Версии не сравниваются — обновляется всегда.</summary>
     public static async Task<string> UpdateAsync(string zapretDir, Action<string> log, CancellationToken ct)
     {
-        // Защита: не трогаем папку, которая не похожа на zapret и не пустая
+        // Защита: не трогаем папку, которая не похожа на Zapret и не пустая
         bool exists = Directory.Exists(zapretDir);
         bool empty = !exists || !Directory.EnumerateFileSystemEntries(zapretDir).Any();
         if (!empty && !Strategy.IsValidZapretDir(zapretDir))
-            throw new InvalidOperationException("Папка не пустая и не похожа на zapret (нет bin\\winws.exe). Чтобы не удалить лишнего, обновление отменено.");
+            throw new InvalidOperationException("Папка не пустая и не похожа на Zapret (нет bin\\winws.exe). Чтобы не удалить лишнего, обновление отменено.");
 
         string tmp = Path.Combine(Path.GetTempPath(), "zapretctl_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmp);
@@ -66,6 +66,20 @@ public static class Updater
         }
     }
 
+    /// <summary>Тег последнего релиза Zapret или null, если GitHub недоступен.</summary>
+    public static async Task<string> GetLatestTagAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("ZapretControlApp/" + AppUpdate.Format(AppUpdate.Current));
+            http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            using var doc = JsonDocument.Parse(await http.GetStringAsync(Api, ct));
+            return doc.RootElement.GetProperty("tag_name").GetString();
+        }
+        catch { return null; }
+    }
+
     static string FindRoot(string dir, int depth)
     {
         if (Directory.Exists(Path.Combine(dir, "bin")) && Directory.Exists(Path.Combine(dir, "lists"))) return dir;
@@ -97,7 +111,7 @@ public static class Updater
             try { CopyDir(lists, backup); log("Бэкап старых списков: " + backup); } catch { }
         }
 
-        // 3. Удаляем старое (только известные части zapret)
+        // 3. Удаляем старое (только известные части Zapret)
         foreach (var d in new[] { "bin", "lists", "utils", ".service" })
         {
             string p = Path.Combine(target, d);

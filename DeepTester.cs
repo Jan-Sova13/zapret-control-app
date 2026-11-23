@@ -76,15 +76,11 @@ public static class DeepProbes
             Bulk("Скрипт клиента", "Клиент", "src=\"(/assets/[^\"]+\\.js)\"", "https://discord.com", "web."),
             new ProbeSpec { Label = "Gateway", Kind = ProbeKind.WebSocket, Url = "wss://gateway.discord.gg/?v=10&encoding=json" },
         },
-        ["Inst"] = new[]
+        ["CF"] = new[]
         {
-            Page("Главная", "https://www.instagram.com/"),
-            Bulk("Статика", "Главная", "https://static\\.cdninstagram\\.com/rsrc\\.php/[^\"'\\s<>\\\\]+\\.js", null),
-        },
-        ["TG"] = new[]
-        {
-            Page("Главная", "https://telegram.org/"),
-            Bulk("Статика", "Главная", "(?:src|href)=\"(/js/[^\"]+)\"", "https://telegram.org", null, false),
+            Page("Главная", "https://cloudflareinsights.com/"),
+            new ProbeSpec { Label = "Страница ECH", Kind = ProbeKind.Download, Url = "https://cloudflare-ech.com/", Cap = BulkCap, Speed = true },
+            new ProbeSpec { Label = "Скрипт", Kind = ProbeKind.Download, Url = "https://static.cloudflareinsights.com/beacon.min.js", Cap = BulkCap },
         },
     };
 

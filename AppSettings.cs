@@ -6,6 +6,7 @@ public class AppSettings
 {
     public const string AppName = "Zapret Control App";
     const int CurrentSettingsVersion = 2;
+    static readonly string[] DefaultServices = { "YouTube", "Discord", "Cloudflare" };
 
     public string ZapretPath { get; set; } = "";
     public string Strategy { get; set; } = "";
@@ -18,20 +19,21 @@ public class AppSettings
     public bool TimestampsChangedByUs { get; set; }
     public bool DriverMayLinger { get; set; }
     public bool StopOnFirstSuccess { get; set; } = true;
-    public List<string> TestServices { get; set; } = new List<string>(TestTargets.ServiceNames);
+    public List<string> TestServices { get; set; } = new List<string>(DefaultServices);
     public List<string> CustomDomains { get; set; } = new List<string>();
 
     // v2: интерфейс
     public int SettingsVersion { get; set; }
     public bool AdvancedMode { get; set; }
-    public string Notifications { get; set; } = "important";   // off | important | all
+    public string Notifications { get; set; } = "important";   // all | important | off | offhide
 
     // v2: сторожевой режим
     public bool WatchEnabled { get; set; } = true;
     public int WatchIntervalMin { get; set; } = 5;              // 0 — выкл, 2 | 5 | 10
     public bool RestartOnWake { get; set; } = true;
     public bool RestartOnCrash { get; set; } = true;
-    public string OnProblems { get; set; } = "once";            // report | once | ten
+    public List<string> WatchServices { get; set; } = new List<string>(DefaultServices);
+    public string OnProblems { get; set; } = "report";            // report | once | ten
 
     // v2: автоподбор
     public string AutoMode { get; set; } = "quick";             // quick | deep
@@ -83,12 +85,15 @@ public class AppSettings
     /// <summary>Отсутствующие и некорректные значения приводятся к допустимым: старый settings.json читается без ошибок.</summary>
     void Normalize()
     {
-        if (TestServices == null) TestServices = new List<string>(TestTargets.ServiceNames);
+        if (TestServices == null) TestServices = new List<string>(DefaultServices);
+        if (WatchServices == null) WatchServices = new List<string>(DefaultServices);
+        TestServices.RemoveAll(n => !TestTargets.ServiceNames.Contains(n));
+        WatchServices.RemoveAll(n => !TestTargets.ServiceNames.Contains(n));
         if (CustomDomains == null) CustomDomains = new List<string>();
         if (Theme != "light" && Theme != "green") Theme = "dark";
-        if (Notifications != "off" && Notifications != "all") Notifications = "important";
+        if (Notifications != "off" && Notifications != "all" && Notifications != "offhide") Notifications = "important";
         if (WatchIntervalMin != 0 && WatchIntervalMin != 2 && WatchIntervalMin != 10) WatchIntervalMin = 5;
-        if (OnProblems != "report" && OnProblems != "ten") OnProblems = "once";
+        if (OnProblems != "once" && OnProblems != "ten") OnProblems = "report";
         if (AutoMode != "deep") AutoMode = "quick";
         if (DeepCandidates < 1 || DeepCandidates > 20) DeepCandidates = 5;
         if (SpeedThresholdKB < 50 || SpeedThresholdKB > 100000) SpeedThresholdKB = 300;
@@ -96,6 +101,18 @@ public class AppSettings
         LastAutoResult ??= "";
         SkippedVersion ??= "";
         NotifiedVersion ??= "";
+    }
+
+    /// <summary>Удаляет всё, что программа хранит в %AppData%: настройки, журнал, бэкапы, временные файлы обновления. Возвращает текст ошибки или null.</summary>
+    public static string DeleteAll()
+    {
+        string err = null;
+        foreach (var d in new[] { Dir, LegacyDir })
+        {
+            try { if (Directory.Exists(d)) Directory.Delete(d, true); }
+            catch (Exception ex) { err = ex.Message; }
+        }
+        return err;
     }
 
     public void Save()
