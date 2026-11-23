@@ -24,7 +24,7 @@ jobs:
       - name: Сборка проекта в один EXE
         run: dotnet publish ./ZapretControlApp.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./publish
 
-      - name: Упаковка и контрольная сумма
+      - name: Упаковка
         shell: pwsh
         run: |
           # GitHub заменяет пробелы в именах файлов релиза на точки, поэтому exe кладём в zip:
@@ -32,12 +32,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path release | Out-Null
           $zip = "release/Zapret-Control-App-${{ github.ref_name }}.zip"
           Compress-Archive -LiteralPath "publish/Zapret Control App.exe" -DestinationPath $zip -Force
-          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-          "$hash  $(Split-Path $zip -Leaf)" | Set-Content -Encoding ascii release/SHA256SUMS.txt
+
 
       - name: Создание релиза и прикрепление файлов
         uses: softprops/action-gh-release@v2
         with:
           files: |
             release/Zapret-Control-App-*.zip
-            release/SHA256SUMS.txt
