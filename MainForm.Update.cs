@@ -164,6 +164,28 @@ public partial class MainForm
         f.ShowDialog(this);
     }
 
+    void ShowLinkDialog(Form owner, string title, string text, string url)
+    {
+        using var f = Dlg(title, 620, 280);
+        var root = Grid(1, 2);
+        root.Padding = Ui.Pad(Ui.Margin);
+        Rows(root, Fill(), Abs(54));
+
+        var box = new LinkText { Dock = DockStyle.Fill, BackColor = Surface, ForeColor = TextC, Margin = Padding.Empty };
+        box.LinkClicked += OpenUrl;
+        root.Controls.Add(box, 0, 0);
+
+        var row = ButtonRow();
+        var bClose = Btn("Закрыть", Accent, 120, 34);
+        bClose.Click += (s, e) => f.Close();
+        row.Controls.Add(bClose);
+        root.Controls.Add(row, 0, 1);
+
+        f.Controls.Add(root);
+        f.Shown += (s, e) => box.SetContent(new (string Text, string Url)[] { (text, null), (url, url) }, AccentLight);
+        f.ShowDialog(owner);
+    }
+
     void ShowUpdateWindow(ReleaseInfo info)
     {
         if (info == null || updateDialogOpen) return;
@@ -241,7 +263,7 @@ public partial class MainForm
                     MessageBox.Show("В списках есть несохранённые правки, при установке они будут потеряны. Продолжить?", "Обновление", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                     return;
 
-                bInstall.Enabled = bManual.Enabled = bSkip.Enabled = bLater.Enabled = false;
+                bInstall.Visible = bManual.Visible = bSkip.Visible = bLater.Visible = false;
                 bCancel.Visible = true;
                 bar.Visible = true;
                 bar.Value = 0;
@@ -250,26 +272,29 @@ public partial class MainForm
                 updating = true;
                 dl = new CancellationTokenSource();
                 string exe = null;
+                bool active = true;
                 try
                 {
                     var progress = new Progress<(long Done, long Total)>(p =>
                     {
+                        if (!active) return;
                         if (p.Total > 0) { bar.Maximum = (int)Math.Max(1, p.Total / 1024); bar.Value = (int)(p.Done / 1024); }
                         lbl.Text = "Загружено " + (p.Done / 1048576.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture).Replace('.', ',') + " МБ";
                     });
                     exe = await AppUpdate.DownloadAsync(info, progress, dl.Token);
                 }
-                catch (OperationCanceledException) { lbl.Text = "Загрузка отменена."; }
+                catch (OperationCanceledException) { active = false; lbl.Text = "Загрузка отменена."; }
                 catch (Exception ex)
                 {
+                    active = false;
                     AddLog("Обновление программы: " + ex.Message);
                     lbl.ForeColor = DangerText;
-                    lbl.Text = "Не удалось: " + ex.Message;
-                    MessageBox.Show(ex.Message + "\n\nСтарая версия осталась рабочей. Можно скачать обновление вручную:\n" + info.PageUrl,
-                        "Обновление", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    lbl.Text = "Не удалось загрузить обновление.";
+                    ShowLinkDialog(f, "Обновление", ex.Message + "\n\nСтарая версия осталась рабочей. Можно скачать обновление вручную:\n", info.PageUrl);
                 }
                 finally
                 {
+                    active = false;
                     updating = false;
                     dl.Dispose();
                     dl = null;
@@ -280,12 +305,12 @@ public partial class MainForm
                     string err = AppUpdate.LaunchInstaller(exe, runner.IsRunning);
                     if (err == null) { install = true; f.Close(); return; }
                     AddLog("Обновление программы: не удалось запустить установщик: " + err);
-                    MessageBox.Show("Не удалось запустить установку: " + err + "\n\nСкачайте обновление вручную:\n" + info.PageUrl, "Обновление", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    ShowLinkDialog(f, "Обновление", "Не удалось запустить установку: " + err + "\n\nСкачайте обновление вручную:\n", info.PageUrl);
                 }
                 bar.Visible = false;
                 bCancel.Visible = false;
+                bInstall.Visible = bManual.Visible = bSkip.Visible = bLater.Visible = true;
                 bInstall.Enabled = info.AssetUrl != null;
-                bManual.Enabled = bSkip.Enabled = bLater.Enabled = true;
             };
 
             f.Controls.Add(root);

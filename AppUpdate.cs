@@ -124,11 +124,12 @@ public static class AppUpdate
         Directory.CreateDirectory(UpdateDir);
         try { foreach (var f in Directory.GetFiles(UpdateDir)) File.Delete(f); } catch { }
 
-        string tmp = Path.Combine(UpdateDir, "download.tmp");
+        string exe = Path.Combine(UpdateDir, "update.exe");
+        string tmp = info.IsZip ? Path.Combine(UpdateDir, "download.zip") : exe;
         string hash;
         using (var http = NewHttp(TimeSpan.FromMinutes(10)))
         {
-            using var resp = await http.GetAsync(info.AssetUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var resp = await http.GetAsync(info.AssetUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
             var final = resp.RequestMessage?.RequestUri;
             if (final == null || final.Scheme != Uri.UriSchemeHttps ||
@@ -138,14 +139,14 @@ public static class AppUpdate
             long total = resp.Content.Headers.ContentLength ?? info.Size;
             using var inc = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             long done = 0;
-            using (var src = await resp.Content.ReadAsStreamAsync(ct))
-            using (var dst = File.Create(tmp))
+            using (var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
+            using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.Read, 81920, true))
             {
                 var buf = new byte[81920];
                 int n;
-                while ((n = await src.ReadAsync(buf, 0, buf.Length, ct)) > 0)
+                while ((n = await src.ReadAsync(buf, 0, buf.Length, ct).ConfigureAwait(false)) > 0)
                 {
-                    await dst.WriteAsync(buf, 0, n, ct);
+                    await dst.WriteAsync(buf, 0, n, ct).ConfigureAwait(false);
                     inc.AppendData(buf, 0, n);
                     done += n;
                     progress?.Report((done, total));
@@ -161,19 +162,23 @@ public static class AppUpdate
             throw new InvalidDataException("Контрольная сумма не совпала: файл повреждён или подменён. Обновление отменено.");
         }
 
-        string exe = Path.Combine(UpdateDir, "update.exe");
         if (info.IsZip)
         {
-            using var zip = ZipFile.OpenRead(tmp);
-            var entry = zip.Entries.Where(e => e.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(e => e.Name.Equals(InstalledName, StringComparison.OrdinalIgnoreCase)).ThenByDescending(e => e.Length).FirstOrDefault();
-            if (entry == null) throw new InvalidDataException("В архиве нет exe-файла.");
-            entry.ExtractToFile(exe, true);
-            File.Delete(tmp);
+            await Task.Run(() =>
+            {
+                using (var zip = ZipFile.OpenRead(tmp))
+                {
+                    var entry = zip.Entries.Where(e => e.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(e => e.Name.Equals(InstalledName, StringComparison.OrdinalIgnoreCase)).ThenByDescending(e => e.Length).FirstOrDefault();
+                    if (entry == null) throw new InvalidDataException("В архиве нет exe-файла.");
+                    entry.ExtractToFile(exe, true);
+                }
+                try { File.Delete(tmp); } catch { }
+            }, ct).ConfigureAwait(false);
         }
-        else File.Move(tmp, exe, true);
 
-        using (var fs = File.OpenRead(exe))
+        // Антивирус может держать свежий файл открытым, поэтому читаем с общим доступом
+        using (var fs = new FileStream(exe, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             if (fs.Length < 1_000_000 || fs.ReadByte() != 'M' || fs.ReadByte() != 'Z')
                 throw new InvalidDataException("Загруженный файл не похож на программу.");
         return exe;
@@ -183,17 +188,20 @@ public static class AppUpdate
     /// UAC не появляется: процесс уже запущен от администратора и наследует права.</summary>
     public static string LaunchInstaller(string newExe, bool resumeBypass)
     {
-        try
+        var psi = new ProcessStartInfo(newExe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(newExe) };
+        psi.ArgumentList.Add("--finish-update");
+        psi.ArgumentList.Add(Environment.ProcessPath);
+        psi.ArgumentList.Add(Environment.ProcessId.ToString());
+        if (resumeBypass) psi.ArgumentList.Add("--resume-bypass");
+
+        // Антивирус проверяет свежескачанный exe и может ненадолго не дать его запустить
+        string error = null;
+        for (int i = 0; i < 6; i++)
         {
-            var psi = new ProcessStartInfo(newExe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(newExe) };
-            psi.ArgumentList.Add("--finish-update");
-            psi.ArgumentList.Add(Environment.ProcessPath);
-            psi.ArgumentList.Add(Environment.ProcessId.ToString());
-            if (resumeBypass) psi.ArgumentList.Add("--resume-bypass");
-            Process.Start(psi)?.Dispose();
-            return null;
+            try { Process.Start(psi)?.Dispose(); return null; }
+            catch (Exception ex) { error = ex.Message; Thread.Sleep(500); }
         }
-        catch (Exception ex) { return ex.Message; }
+        return error;
     }
 
     /// <summary>Работает в новом экземпляре: ждёт выхода старого, заменяет его exe и запускает обновлённую программу.</summary>
