@@ -81,7 +81,7 @@ public partial class MainForm
             switch (i)
             {
                 case 0: OpenUrl(AppUpdate.RepoUrl); break;
-                case 1: OpenUrl(AppUpdate.RepoUrl + "/releases/tag/" + AppUpdate.Format(AppUpdate.Current)); break;
+                case 1: ShowWhatsNew(); break;
                 case 2: _ = ManualUpdateCheckAsync(); break;
                 case 3: OpenUrl(AppUpdate.RepoUrl + "/issues"); break;
                 default:
@@ -110,6 +110,71 @@ public partial class MainForm
 
     FlowLayoutPanel ButtonRow()
         => new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Bg, Padding = Ui.Pad(0, 10, 0, 0), WrapContents = false, Margin = Padding.Empty };
+
+    bool whatsNewOpen;
+
+    void ShowWhatsNew()
+    {
+        if (whatsNewOpen) return;
+        whatsNewOpen = true;
+        try
+        {
+            using var f = Dlg("Что нового", 860, 600);
+            var root = Grid(1, 2);
+            root.Padding = Ui.Pad(Ui.Margin);
+            Rows(root, Fill(), Abs(54));
+
+            var host = new ScrollHost { Dock = DockStyle.Fill, BackColor = Bg, Margin = Padding.Empty };
+            host.Content.BackColor = Bg;
+            host.Content.Controls.Add(Caption("Загрузка…", Fonts.Body, Muted, 30));
+            root.Controls.Add(host, 0, 0);
+
+            var row = ButtonRow();
+            var bClose = Btn("Закрыть", Accent, 120, 34);
+            bClose.Click += (s, e) => f.Close();
+            row.Controls.Add(bClose);
+            root.Controls.Add(row, 0, 1);
+
+            f.Controls.Add(root);
+            f.Shown += async (s, e) =>
+            {
+                var list = await AppUpdate.GetReleasesAsync(CancellationToken.None);
+                if (!host.IsDisposed) FillWhatsNew(host.Content, list);
+            };
+            f.ShowDialog(this);
+        }
+        finally { whatsNewOpen = false; }
+    }
+
+    /// <summary>Сверху новые версии, затем установленная и предыдущие.</summary>
+    void FillWhatsNew(VStack c, List<ReleaseNote> list)
+    {
+        c.SuspendLayout();
+        foreach (var x in c.Controls.Cast<Control>().ToList()) { c.Controls.Remove(x); x.Dispose(); }
+        if (list == null || list.Count == 0)
+            c.Controls.Add(Caption(list == null ? "Не удалось связаться с GitHub." : "Описаний релизов пока нет.", Fonts.Body, Muted, 30));
+        else
+        {
+            var cur = AppUpdate.Current;
+            foreach (var r in list)
+            {
+                string title = r.Tag;
+                Color color = TextC;
+                if (r.Version > cur) { title += " — новая версия"; color = DangerText; }
+                else if (r.Version == cur) { title += " — установлена сейчас"; color = AccentLight; }
+
+                var head = Caption(title, Fonts.Heading, color, 32);
+                head.Margin = Ui.Pad(0, 0, 0, 4);
+                c.Controls.Add(head);
+                c.Controls.Add(new FitNote
+                {
+                    BackColor = Surface, ForeColor = TextC, Font = Fonts.Body, Height = Ui.S(60), Margin = Ui.Pad(0, 0, 0, 18),
+                    Text = AppUpdate.PlainNotes(r.Notes),
+                });
+            }
+        }
+        c.ResumeLayout(true);
+    }
 
     void ShowAbout()
     {
@@ -148,7 +213,7 @@ public partial class MainForm
             (".\nОболочка для ", null),
             ("Zapret (Flowseal/zapret-discord-youtube)", "https://github.com/Flowseal/zapret-discord-youtube"),
             (": запускает winws.exe, подбирает стратегии, следит за работой Zapret. " +
-             "Сам Zapret — отдельный проект, скачивается кнопкой «Обновить Zapret».\n\n" +
+             "Сам Zapret — отдельный проект, устанавливается и обновляется кнопкой «Установить Zapret» / «Обновить Zapret».\n\n" +
              "Что программа делает в системе:\n" +
              "• Хранит настройки (в том числе тему и режим интерфейса), журнал сбоев crash.log, бэкапы списков и временные файлы обновления в %AppData%\\Zapret Control App. Всё это удаляется кнопкой «Удалить все настройки» (продвинутый режим).\n" +
              "• Пока Zapret включён: работает winws.exe и загружен драйвер WinDivert. При выключении, закрытии или падении программы winws завершается, драйвер выгружается.\n" +
@@ -157,7 +222,7 @@ public partial class MainForm
              "• Сторожевой режим (включён по умолчанию): пока Zapret включён, раз в несколько минут открывает 2–4 сайта выбранных сервисов; после сна, смены сети или падения winws.exe перезапускает Zapret. Настройки системы при этом не меняются.\n" +
              "• Значок в трее и уведомления Windows показывают состояние и важные события; значок можно убрать в настройках.\n" +
              "• Диагностика только читает состояние системы (процессы, службы, реестр, DNS, время) и ничего не меняет.\n" +
-             "• Сеть: запросы к сайтам для проверок; к api.github.com и github.com — для проверки и загрузки обновлений программы и Zapret (при запуске и раз в сутки, можно отключить). Zapret скачивается только по кнопке «Обновить Zapret».\n" +
+             "• Сеть: запросы к сайтам для проверок; к api.github.com и github.com — для проверки и загрузки обновлений программы и Zapret (при запуске и раз в сутки, можно отключить) и для окна «Что нового» (по открытию). Zapret скачивается только по кнопкам «Установить Zapret» и «Обновить Zapret».\n" +
              "• Обновление программы: по кнопке «Установить и перезапустить» новый exe скачивается в %AppData%\\Zapret Control App\\update, проверяется контрольная сумма, после выхода из программы текущий exe заменяется.\n" +
              "• Hosts, настройки DNS, службы Windows и реестр не меняются (кроме временной службы драйвера WinDivert и задачи автозапуска).", null),
         }, AccentLight);

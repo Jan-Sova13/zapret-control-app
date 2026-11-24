@@ -114,7 +114,7 @@ public partial class MainForm
         string dir = Path.Combine(cfg.ZapretPath ?? "", "lists");
         if (!Strategy.IsValidZapretDir(cfg.ZapretPath) || !Directory.Exists(dir))
         {
-            var l = Caption("Папка Zapret не выбрана. Укажите её на вкладке «Настройки» или скачайте Zapret кнопкой «Обновить Zapret» в настройках.", Fonts.Body, Muted, 30);
+            var l = Caption("Папка Zapret не выбрана. Укажите её на вкладке «Настройки» или установите Zapret кнопкой «Установить Zapret».", Fonts.Body, Muted, 30);
             host.Controls.Add(l);
             SetListButtons(false);
             host.ResumeLayout(true);

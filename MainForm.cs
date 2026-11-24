@@ -207,7 +207,7 @@ public partial class MainForm : Form
         if (!Strategy.IsValidZapretDir(cfg.ZapretPath))
         {
             ShowPage(PgSettings);
-            if (!silent) MessageBox.Show("Сначала укажите папку Zapret (или скачайте его кнопкой «Обновить Zapret» в настройках).", AppSettings.AppName,
+            if (!silent) MessageBox.Show("Сначала укажите папку Zapret (или установите его кнопкой «Установить Zapret»).", AppSettings.AppName,
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return false;
         }
@@ -584,6 +584,7 @@ public partial class MainForm : Form
             loading = was;
         }
         foreach (var c in advSettings) c.Visible = on;
+        UpdatePathEditing();
         SetAutoAdvanced(on);
         RebuildTabs();
     }

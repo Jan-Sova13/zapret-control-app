@@ -11,10 +11,7 @@ public static class Updater
     /// Свои списки (*-user.txt) сохраняются. Версии не сравниваются — обновляется всегда.</summary>
     public static async Task<string> UpdateAsync(string zapretDir, Action<string> log, CancellationToken ct)
     {
-        // Защита: не трогаем папку, которая не похожа на Zapret и не пустая
-        bool exists = Directory.Exists(zapretDir);
-        bool empty = !exists || !Directory.EnumerateFileSystemEntries(zapretDir).Any();
-        if (!empty && !Strategy.IsValidZapretDir(zapretDir))
+        if (!IsSafeTarget(zapretDir))
             throw new InvalidOperationException("Папка не пустая и не похожа на Zapret (нет bin\\winws.exe). Чтобы не удалить лишнего, обновление отменено.");
 
         string tmp = Path.Combine(Path.GetTempPath(), "zapretctl_" + Guid.NewGuid().ToString("N"));
@@ -65,6 +62,10 @@ public static class Updater
             try { Directory.Delete(tmp, true); } catch { }
         }
     }
+
+    /// <summary>Установка и обновление допустимы в пустую или несуществующую папку и в папку с Zapret; чужую папку не трогаем.</summary>
+    public static bool IsSafeTarget(string dir)
+        => !Directory.Exists(dir) || Strategy.IsValidZapretDir(dir) || !Directory.EnumerateFileSystemEntries(dir).Any();
 
     /// <summary>Тег последнего релиза Zapret или null, если GitHub недоступен.</summary>
     public static async Task<string> GetLatestTagAsync(CancellationToken ct)

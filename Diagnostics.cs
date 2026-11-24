@@ -135,15 +135,15 @@ public static class DiagRunner
     static CheckResult Folder(DiagInput d)
     {
         if (string.IsNullOrWhiteSpace(d.ZapretPath))
-            return R(Sev.Fail, "Папка Zapret не выбрана.", "Укажите папку на вкладке «Настройки» или скачайте Zapret кнопкой «Обновить Zapret».");
+            return R(Sev.Fail, "Папка Zapret не выбрана.", "Укажите папку на вкладке «Настройки» или скачайте Zapret кнопкой «Установить Zapret».");
         if (!File.Exists(Path.Combine(d.ZapretPath, "bin", "winws.exe")))
-            return R(Sev.Fail, "В папке нет bin\\winws.exe.", "Проверьте путь или нажмите «Обновить Zapret». Возможно, антивирус удалил файлы.");
+            return R(Sev.Fail, "В папке нет bin\\winws.exe.", "Проверьте путь или нажмите «Установить Zapret». Возможно, антивирус удалил файлы.");
         if (!Directory.Exists(Path.Combine(d.ZapretPath, "lists")))
-            return R(Sev.Fail, "В папке нет подпапки lists.", "Нажмите «Обновить Zapret», чтобы восстановить файлы.");
+            return R(Sev.Fail, "В папке нет подпапки lists.", "Нажмите «Установить Zapret», чтобы восстановить файлы.");
 
         string[] bats = Directory.GetFiles(d.ZapretPath, "*.bat");
         int count = bats.Count(b => !Path.GetFileName(b).StartsWith("service", StringComparison.OrdinalIgnoreCase));
-        if (count == 0) return R(Sev.Fail, "Не найдено ни одной стратегии (general*.bat).", "Нажмите «Обновить Zapret».");
+        if (count == 0) return R(Sev.Fail, "Не найдено ни одной стратегии (general*.bat).", "Нажмите «Установить Zapret».");
 
         bool cyr = d.ZapretPath.Any(ch => ch > 127);
         bool onedrive = d.ZapretPath.IndexOf("OneDrive", StringComparison.OrdinalIgnoreCase) >= 0;

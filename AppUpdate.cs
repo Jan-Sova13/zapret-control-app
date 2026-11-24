@@ -18,6 +18,12 @@ public class ReleaseInfo
     public bool IsZip;
 }
 
+public class ReleaseNote
+{
+    public Version Version;
+    public string Tag, Notes;
+}
+
 public class UpdateCheck
 {
     public UpdateStatus Status;
@@ -28,6 +34,7 @@ public static class AppUpdate
 {
     public const string RepoUrl = "https://github.com/Jan-Sova13/zapret-control-app";
     const string Api = "https://api.github.com/repos/Jan-Sova13/zapret-control-app/releases/latest";
+    const string ListApi = "https://api.github.com/repos/Jan-Sova13/zapret-control-app/releases?per_page=30";
     const string InstalledName = "Zapret Control App.exe";
 
     static Version Normalize(Version v) => new Version(v.Major, Math.Max(v.Minor, 0), Math.Max(v.Build, 0));
@@ -101,6 +108,26 @@ public static class AppUpdate
             return new UpdateCheck { Status = UpdateStatus.Available, Info = info };
         }
         catch { return new UpdateCheck { Status = UpdateStatus.Failed }; }
+    }
+
+    /// <summary>Опубликованные релизы от новых к старым; null — GitHub недоступен.</summary>
+    public static async Task<List<ReleaseNote>> GetReleasesAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var http = NewHttp(TimeSpan.FromSeconds(10));
+            using var doc = JsonDocument.Parse(await http.GetStringAsync(ListApi, ct));
+            var list = new List<ReleaseNote>();
+            foreach (var r in doc.RootElement.EnumerateArray())
+            {
+                if (!Version.TryParse((r.GetProperty("tag_name").GetString() ?? "").TrimStart('v', 'V'), out var v)) continue;
+                v = Normalize(v);
+                list.Add(new ReleaseNote { Version = v, Tag = Format(v), Notes = r.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "" });
+            }
+            list.Sort((a, b) => b.Version.CompareTo(a.Version));
+            return list;
+        }
+        catch { return null; }
     }
 
     /// <summary>Описание релиза обычным текстом (без разметки Markdown).</summary>

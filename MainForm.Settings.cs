@@ -3,7 +3,8 @@ namespace ZapretControlApp;
 public partial class MainForm
 {
     ScrollText txtPath;
-    RoundButton btnBrowse, btnUpdateSettings;
+    RoundButton btnBrowse, btnSavePath, btnUpdateSettings;
+    TableLayoutPanel pathRow;
     Label lblZapretUpdate;
 
     const string NotifyHelp =
@@ -36,26 +37,32 @@ public partial class MainForm
 
         c.Controls.Add(Caption("Папка Zapret (где лежат bin, lists, utils и general*.bat):", Fonts.Body, Muted, 28));
 
-        var row = Grid(2, 1);
+        var row = pathRow = Grid(3, 1);
         row.Dock = DockStyle.None;
         row.Height = Ui.S(40);
         row.Margin = Ui.Pad(0, 0, 0, 6);
-        Cols(row, Fill(), Abs(140));
+        Cols(row, Fill(), Abs(140), Abs(0));
         txtPath = Input(false);
         txtPath.Dock = DockStyle.Fill;
         txtPath.Margin = Ui.Pad(0, 0, 10, 0);
         txtPath.Text = cfg.ZapretPath;
-        txtPath.Box.Leave += (s, e) => ApplyPathFromText();
+        txtPath.Box.TextChanged += (s, e) => UpdatePathEditing();
         txtPath.Box.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { ApplyPathFromText(); e.SuppressKeyPress = true; } };
-        btnBrowse = Btn("Выбрать…", Line, 130, 34);
+        btnBrowse = Btn("Выбрать ...", Line, 130, 34);
         btnBrowse.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         btnBrowse.Click += (s, e) =>
         {
             using var d = new FolderBrowserDialog { Description = "Папка с zapret-discord-youtube", UseDescriptionForTitle = true, SelectedPath = cfg.ZapretPath };
-            if (d.ShowDialog(this) == DialogResult.OK) { txtPath.Text = d.SelectedPath; ApplyPathFromText(); }
+            if (d.ShowDialog(this) == DialogResult.OK) ApplyPath(d.SelectedPath);
         };
+        btnSavePath = Btn("Сохранить", Accent, 130, 34);
+        btnSavePath.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        btnSavePath.Margin = Ui.Pad(10, 0, 0, 0);
+        btnSavePath.Visible = false;
+        btnSavePath.Click += (s, e) => ApplyPathFromText();
         row.Controls.Add(txtPath, 0, 0);
         row.Controls.Add(btnBrowse, 1, 0);
+        row.Controls.Add(btnSavePath, 2, 0);
         c.Controls.Add(row);
 
         lblVersion = Caption("", Fonts.Body, Muted, 28);
@@ -162,10 +169,25 @@ public partial class MainForm
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
-    void ApplyPathFromText()
+    string TypedPath() => txtPath.Text.Trim().Trim('"');
+
+    /// <summary>Ручной ввод пути доступен только в продвинутом режиме; изменённый текст применяется кнопкой «Сохранить».</summary>
+    void UpdatePathEditing()
     {
-        if (txtPath == null) return;
-        string path = txtPath.Text.Trim().Trim('"');
+        if (txtPath == null || btnSavePath == null) return;
+        bool adv = cfg.AdvancedMode;
+        if (txtPath.ReadOnly == adv) txtPath.ReadOnly = !adv;
+        if (!adv && txtPath.Text != cfg.ZapretPath) { txtPath.Text = cfg.ZapretPath; return; }
+        bool dirty = adv && TypedPath() != cfg.ZapretPath;
+        if (btnSavePath.Visible == dirty) return;
+        btnSavePath.Visible = dirty;
+        pathRow.ColumnStyles[2].Width = dirty ? Ui.S(140) : 0;
+    }
+
+    void ApplyPathFromText() => ApplyPath(TypedPath());
+
+    void ApplyPath(string path)
+    {
         if (path == cfg.ZapretPath) return;
         cfg.ZapretPath = path;
         cfg.Save();
@@ -202,24 +224,37 @@ public partial class MainForm
 
     async Task UpdateZapretAsync()
     {
-        ApplyPathFromText();
+        bool install = !ZapretInstalled;
         string path = cfg.ZapretPath;
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            ShowPage(PgSettings);
-            MessageBox.Show("Укажите папку, куда положить Zapret (можно пустую), на вкладке «Настройки» — и нажмите «Обновить Zapret» ещё раз.", AppSettings.AppName);
-            return;
-        }
+        string title = install ? "Установить Zapret" : "Обновить Zapret";
 
-        var ask = MessageBox.Show(
-            "Будут скачаны последние файлы Zapret с GitHub и заменены папки bin, lists, utils и все .bat в:\n" + path +
-            "\n\nВаши списки *-user.txt сохранятся, старые списки уйдут в бэкап. Версия не сверяется — обновление будет всегда. Продолжить?",
-            "Обновить Zapret", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-        if (ask != DialogResult.Yes) return;
+        if (install)
+        {
+            using var d = new FolderBrowserDialog
+            {
+                Description = "Папка для установки Zapret (пустая, без кириллицы и не в OneDrive)",
+                UseDescriptionForTitle = true, ShowNewFolderButton = true, SelectedPath = path,
+            };
+            if (d.ShowDialog(this) != DialogResult.OK) return;
+            path = d.SelectedPath;
+            if (!Updater.IsSafeTarget(path))
+            {
+                MessageBox.Show("Папка не пустая и в ней нет Zapret. Выберите пустую папку.", title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+        }
+        else
+        {
+            var ask = MessageBox.Show(
+                "Будут скачаны последние файлы Zapret с GitHub и заменены папки bin, lists, utils и все .bat в:\n" + path +
+                "\n\nВаши списки *-user.txt сохранятся, старые списки уйдут в бэкап. Версия не сверяется — обновление будет всегда. Продолжить?",
+                title, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (ask != DialogResult.Yes) return;
+        }
 
         if (AnyListDirty)
         {
-            var r = MessageBox.Show("В списках есть несохранённые правки, при обновлении они будут потеряны. Продолжить?", "Обновить Zapret",
+            var r = MessageBox.Show("В списках есть несохранённые правки, при " + (install ? "установке" : "обновлении") + " они будут потеряны. Продолжить?", title,
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (r != DialogResult.Yes) return;
         }
@@ -231,14 +266,15 @@ public partial class MainForm
         try
         {
             string tag = await Updater.UpdateAsync(path, AddLog, CancellationToken.None);
-            AddLog("Zapret обновлён до " + tag + ".");
-            Notify("zapret-updated", false, "Zapret обновлён", "Установлена версия " + tag + ".", ToolTipIcon.Info, () => ShowTab(PgLog));
-            MessageBox.Show("Готово: " + tag, "Обновить Zapret", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (install) { cfg.ZapretPath = path; cfg.Save(); }
+            AddLog("Zapret " + (install ? "установлен: " : "обновлён до ") + tag + ".");
+            Notify("zapret-updated", false, install ? "Zapret установлен" : "Zapret обновлён", "Установлена версия " + tag + ".", ToolTipIcon.Info, () => ShowTab(PgLog));
+            MessageBox.Show("Готово: " + tag, title, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
-            AddLog("Обновление не удалось: " + ex.Message);
-            MessageBox.Show("Обновление не удалось:\n" + ex.Message, "Обновить Zapret", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            AddLog((install ? "Установка" : "Обновление") + " не удалось: " + ex.Message);
+            MessageBox.Show((install ? "Установка" : "Обновление") + " не удалось:\n" + ex.Message, title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
         finally
         {

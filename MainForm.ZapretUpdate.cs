@@ -22,14 +22,21 @@ public partial class MainForm
         RefreshZapretUpdateUi();
     }
 
-    /// <summary>Кнопка в шапке и подпись в настройках показываются, только если установленный Zapret старее последнего релиза.</summary>
+    bool ZapretInstalled => Strategy.IsValidZapretDir(cfg.ZapretPath);
+
+    /// <summary>Кнопка в шапке: «Установить Zapret», если его нет в выбранной папке, и «Обновить Zapret», если вышла новая версия. В настройках кнопка видна всегда.</summary>
     void RefreshZapretUpdateUi()
     {
         if (headerInfo == null) return;
-        string cur = Strategy.IsValidZapretDir(cfg.ZapretPath) ? Strategy.ReadVersion(cfg.ZapretPath) : null;
-        bool outdated = TryVer(zapretLatest, out var latest) && TryVer(cur, out var now) && latest > now;
-        btnUpdate.Visible = lblZapretNew.Visible = outdated;
-        headerInfo.ColumnStyles[1].Width = outdated ? Ui.S(190) : 0;
+        bool installed = ZapretInstalled;
+        string cur = installed ? Strategy.ReadVersion(cfg.ZapretPath) : null;
+        bool outdated = installed && TryVer(zapretLatest, out var latest) && TryVer(cur, out var now) && latest > now;
+        bool show = !installed || outdated;
+        string caption = installed ? "Обновить Zapret" : "Установить Zapret";
+        btnUpdate.Text = btnUpdateSettings.Text = caption;
+        btnUpdate.Visible = lblZapretNew.Visible = show;
+        lblZapretNew.Text = installed ? "Вышла новая версия" : "Zapret не найден";
+        headerInfo.ColumnStyles[1].Width = show ? Ui.S(190) : 0;
         if (lblZapretUpdate != null)
             lblZapretUpdate.Text = outdated ? "Вышла новая версия: " + zapretLatest.TrimStart('v', 'V') + " (сейчас " + cur + ")" : "";
     }
